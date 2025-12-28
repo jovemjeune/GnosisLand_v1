@@ -159,6 +159,7 @@ forge snapshot
 
 ### 📚 **Comprehensive Guides**
 
+- **[README](README.md)** - Project overview and getting started guide
 - **[System Architecture](docs/SYSTEM_ARCHITECTURE.md)** - Detailed system design and component interactions
 - **[User Flows](docs/USER_FLOWS.md)** - Step-by-step user interaction flows
 - **[Deployment Guide](DEPLOYMENT.md)** - Complete deployment instructions
@@ -237,8 +238,10 @@ forge lint
 ### Base Mainnet Deployment
 
 ```bash
+# Import wallet using cast (interactive mode)
+cast wallet import PRIVATE_KEY --interactive
+
 # Set environment variables
-export PRIVATE_KEY=<your_deployer_private_key>
 export OWNER=<owner_address>
 export USDC_TOKEN=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
 export AAVE_POOL=0xA238Dd80C259a72e81d7e4664a9801593F98d1c5
