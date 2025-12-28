@@ -187,4 +187,15 @@ Cargo.lock
 # ============================================
 # Ignore all markdown files except README.md
 *.md
+!SystemArchitecture.md
+!USER_FLOWS.md
+!DEPLOYMENT.md
+!SECURITY.md
+!CERTIFICATE_SYSTEM.md
+!COUPON_CODE_SYSTEM.md
+!REFERRAL_SYSTEM.md
+!TREASURY_SYSTEM.md
+!DATA_STRUCTURES.md
+!VISUAL_SUMMARY.md
+!COMPLETE_IMPLEMENTATION_SUMMARY.md
 !README.md
