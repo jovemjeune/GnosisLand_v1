@@ -1,0 +1,20 @@
+# Dependabot configuration for dependency security tracking
+# https://docs.github.com/en/code-security/dependabot
+
+version: 2
+updates:
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Note: Dependabot doesn't directly support Foundry dependencies (git submodules)
+  # For Foundry projects, use forge audit and manual dependency updates
+  # Consider using tools like:
+  # - forge update (for updating dependencies)
+  # - forge audit (for checking vulnerabilities)
+  # - Custom scripts to check for outdated dependencies
+
+

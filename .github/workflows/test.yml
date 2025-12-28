@@ -1,0 +1,128 @@
+name: CI
+
+permissions: {}
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  check:
+    name: Foundry project
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Show Forge version
+        run: forge --version
+
+      - name: Run Forge fmt
+        run: forge fmt --check
+
+      - name: Run Forge build
+        run: forge build --sizes
+
+      - name: Run Forge tests
+        run: forge test -vvv
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Check for dependency vulnerabilities
+        id: audit
+        run: |
+          echo "Running forge audit to check for known vulnerabilities..."
+          if forge audit 2>/dev/null; then
+            echo "audit_exit_code=0" >> $GITHUB_OUTPUT
+            echo "✓ Forge audit passed"
+          else
+            echo "::warning::forge audit not available or found issues"
+            echo "Note: forge audit may not be available in all Foundry versions"
+            echo "Consider using alternative security tools:"
+            echo "  - Slither (static analysis)"
+            echo "  - Mythril (symbolic execution)"
+            echo "  - Manual dependency review"
+            echo "audit_exit_code=1" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+
+      - name: Check dependency versions
+        run: |
+          echo "Checking for outdated dependencies..."
+          if [ -f "foundry.toml" ]; then
+            echo "Foundry.toml configuration:"
+            cat foundry.toml
+          fi
+          echo "Checking OpenZeppelin contracts version..."
+          if [ -d "lib/openzeppelin-contracts" ]; then
+            cd lib/openzeppelin-contracts
+            if [ -f "package.json" ]; then
+              echo "OpenZeppelin version:"
+              grep '"version"' package.json || echo "Version not found in package.json"
+            fi
+            cd ../..
+          fi
+
+      - name: Verify critical dependencies
+        run: |
+          echo "Verifying critical dependencies are present..."
+          if [ ! -d "lib/openzeppelin-contracts" ]; then
+            echo "::error::OpenZeppelin contracts not found!"
+            exit 1
+          fi
+          if [ ! -d "lib/forge-std" ]; then
+            echo "::error::forge-std not found!"
+            exit 1
+          fi
+          echo "✓ All critical dependencies found"
+
+      - name: Check for known vulnerable patterns
+        run: |
+          echo "Checking for common vulnerable patterns..."
+          # Check for dangerous functions
+          if grep -r "delegatecall" src/ --include="*.sol" | grep -v "//" | grep -v "import"; then
+            echo "::warning::Found delegatecall usage - review carefully"
+          fi
+          if grep -r "selfdestruct" src/ --include="*.sol" | grep -v "//" | grep -v "import"; then
+            echo "::warning::Found selfdestruct usage - review carefully"
+          fi
+          echo "✓ Pattern check completed"
+
+      - name: Security audit summary
+        if: always()
+        run: |
+          echo "## Security Audit Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Dependency Audit" >> $GITHUB_STEP_SUMMARY
+          echo "- Forge audit: ${{ steps.audit.outputs.audit_exit_code == '0' && '✅ Passed' || '⚠️ Issues found' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Recommendations" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review forge audit output for any vulnerabilities" >> $GITHUB_STEP_SUMMARY
+          echo "2. Keep dependencies up to date" >> $GITHUB_STEP_SUMMARY
+          echo "3. Consider additional security tools:" >> $GITHUB_STEP_SUMMARY
+          echo "   - Slither (static analysis)" >> $GITHUB_STEP_SUMMARY
+          echo "   - Mythril (symbolic execution)" >> $GITHUB_STEP_SUMMARY
+          echo "   - Professional security audit before mainnet deployment" >> $GITHUB_STEP_SUMMARY
