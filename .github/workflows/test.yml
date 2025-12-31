@@ -103,6 +103,11 @@ jobs:
       - name: Build contracts
         run: forge build
 
+      - name: Install dependencies
+        run: |
+          forge install foundry-rs/forge-std
+          forge install OpenZeppelin/openzeppelin-contracts
+
       - name: Check for dependency vulnerabilities
         id: audit
         run: |
