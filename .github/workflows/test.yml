@@ -317,7 +317,7 @@ jobs:
           echo "✓ Pattern check completed"
 
       - name: Upload security reports (Private)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: security-reports
           path: security-reports/
