@@ -45,7 +45,7 @@ contract DiscountBallot is Ownable, Initializable, UUPSUpgradeable {
         0x128c14ba4f23205bdb10400203da2c18c7dcd45b0d972dbf23202bb2496a5200;
 
     function _getDiscountBallotStorage() private pure returns (DiscountBallotStorage storage $) {
-        assembly ("memory-safe") {
+        assembly{
             $.slot := DISCOUNT_BALLOT_STORAGE_LOCATION
         }
     }
