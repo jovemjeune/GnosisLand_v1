@@ -32,8 +32,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          forge install foundry-rs/forge-std --no-commit
-          forge install OpenZeppelin/openzeppelin-contracts --no-commit
+          forge install foundry-rs/forge-std
+          forge install OpenZeppelin/openzeppelin-contracts
 
       - name: Run Forge fmt
         run: forge fmt --check
@@ -97,8 +97,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          forge install foundry-rs/forge-std --no-commit
-          forge install OpenZeppelin/openzeppelin-contracts --no-commit
+          forge install foundry-rs/forge-std
+          forge install OpenZeppelin/openzeppelin-contracts
 
       - name: Build contracts
         run: forge build
