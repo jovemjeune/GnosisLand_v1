@@ -84,12 +84,7 @@ contract GnosislandDeploymentScript is Script {
         // Step 1: Deploy GlUSD (with temporary treasury address)
         console.log("\n[1/9] Deploying GlUSD...");
         glusdImplementation = address(new GlUSD());
-        bytes memory glusdInit = abi.encodeWithSelector(
-            GlUSD.initialize.selector,
-            address(0x123), // Temporary treasury (will be updated)
-            usdcToken,
-            owner
-        );
+        bytes memory glusdInit = abi.encodeWithSelector(GlUSD.initialize.selector, address(0x123), usdcToken, owner);
         glusdProxy = address(new ERC1967Proxy(glusdImplementation, glusdInit));
         console.log("GlUSD Implementation:", glusdImplementation);
         console.log("GlUSD Proxy:", glusdProxy);
@@ -121,7 +116,7 @@ contract GnosislandDeploymentScript is Script {
             aavePool,
             morphoMarket,
             escrowNFTProxy,
-            address(0), // lessonNFT (will be set later)
+            address(0),
             owner
         );
         treasuryProxy = address(new ERC1967Proxy(treasuryImplementation, treasuryInit));
