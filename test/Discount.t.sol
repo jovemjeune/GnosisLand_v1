@@ -90,19 +90,19 @@ contract DiscountBallotTest is Test {
     }
 
     function test_Proposal() public {
-        DiscountBallot.Proposal memory prop = db.proposal(0);
-        assertEq(prop.proposalId, 0);
-        assertEq(prop.discountPrice, 0);
-        assertEq(prop.proposalOwner, address(0));
-        assertEq(uint256(prop.winnerOption), 0); // PENDING
-        assertFalse(prop.finished);
+        (uint256 proposalId, uint256 discountPrice, address proposalOwner, DiscountBallot.Discounts winnerOption, bool finished) = db.proposal(0);
+        assertEq(proposalId, 0);
+        assertEq(discountPrice, 0);
+        assertEq(proposalOwner, address(0));
+        assertEq(uint256(winnerOption), 0); // PENDING
+        assertFalse(finished);
     }
 
     function test_Votes() public {
-        DiscountBallot.Votes memory vote = db.votes(0);
-        assertEq(vote.voteAmountForOptionOne, 0);
-        assertEq(vote.voteAmountForOptionTwo, 0);
-        assertEq(vote.voteAmountForOptionThree, 0);
+        (uint256 voteAmountForOptionOne, uint256 voteAmountForOptionTwo, uint256 voteAmountForOptionThree) = db.votes(0);
+        assertEq(voteAmountForOptionOne, 0);
+        assertEq(voteAmountForOptionTwo, 0);
+        assertEq(voteAmountForOptionThree, 0);
     }
 
     // ============ Treasury Update Tests ============
@@ -235,12 +235,12 @@ contract DiscountBallotTest is Test {
         assertEq(proposalId, 1);
         assertEq(db.latestBallotId(), 1);
 
-        DiscountBallot.Proposal memory prop = db.proposal(proposalId);
-        assertEq(prop.proposalId, proposalId);
-        assertEq(prop.discountPrice, discountPrice);
-        assertEq(prop.proposalOwner, owner);
-        assertEq(uint256(prop.winnerOption), uint256(DiscountBallot.Discounts.PENDING));
-        assertFalse(prop.finished);
+        (uint256 propId, uint256 propDiscountPrice, address propOwner, DiscountBallot.Discounts propWinnerOption, bool propFinished) = db.proposal(proposalId);
+        assertEq(propId, proposalId);
+        assertEq(propDiscountPrice, discountPrice);
+        assertEq(propOwner, owner);
+        assertEq(uint256(propWinnerOption), uint256(DiscountBallot.Discounts.PENDING));
+        assertFalse(propFinished);
     }
 
     function test_Vote_OptionOne() public {
@@ -254,9 +254,10 @@ contract DiscountBallotTest is Test {
 
         assertTrue(db.userVoted(user1));
         assertEq(db.getOptionOneVotes(proposalId), voteAmount);
-        assertEq(db.votes(proposalId).voteAmountForOptionOne, voteAmount);
-        assertEq(db.votes(proposalId).voteAmountForOptionTwo, 0);
-        assertEq(db.votes(proposalId).voteAmountForOptionThree, 0);
+        (uint256 voteOne, uint256 voteTwo, uint256 voteThree) = db.votes(proposalId);
+        assertEq(voteOne, voteAmount);
+        assertEq(voteTwo, 0);
+        assertEq(voteThree, 0);
         assertEq(address(db).balance, voteAmount);
     }
 
@@ -271,7 +272,8 @@ contract DiscountBallotTest is Test {
 
         assertTrue(db.userVoted(user1));
         assertEq(db.getOptionTwoVotes(proposalId), voteAmount);
-        assertEq(db.votes(proposalId).voteAmountForOptionTwo, voteAmount);
+        (uint256 voteOne, uint256 voteTwo, uint256 voteThree) = db.votes(proposalId);
+        assertEq(voteTwo, voteAmount);
     }
 
     function test_Vote_OptionThree() public {
@@ -285,7 +287,8 @@ contract DiscountBallotTest is Test {
 
         assertTrue(db.userVoted(user1));
         assertEq(db.getOptionThreeVotes(proposalId), voteAmount);
-        assertEq(db.votes(proposalId).voteAmountForOptionThree, voteAmount);
+        (uint256 voteOne, uint256 voteTwo, uint256 voteThree) = db.votes(proposalId);
+        assertEq(voteThree, voteAmount);
     }
 
     function test_Vote_MultipleUsers() public {
@@ -307,8 +310,9 @@ contract DiscountBallotTest is Test {
 
         assertEq(db.getOptionOneVotes(proposalId), voteAmount1);
         assertEq(db.getOptionTwoVotes(proposalId), voteAmount2);
-        assertEq(db.votes(proposalId).voteAmountForOptionOne, voteAmount1);
-        assertEq(db.votes(proposalId).voteAmountForOptionTwo, voteAmount2);
+        (uint256 voteOne, uint256 voteTwo, uint256 voteThree) = db.votes(proposalId);
+        assertEq(voteOne, voteAmount1);
+        assertEq(voteTwo, voteAmount2);
     }
 
     function test_Vote_NonExistentProposal() public {
