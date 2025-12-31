@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-//  ____                 _       _                    _ 
+//  ____                 _       _                    _
 // / ___|_ __   ___  ___(_)___  | |    __ _ _ __   __| |
 //| |  _| '_ \ / _ \/ __| / __| | |   / _` | '_ \ / _` |
 //| |_| | | | | (_) \__ \ \__ \ | |__| (_| | | | | (_| |
 // \____|_| |_|\___/|___/_|___/ |_____\__,_|_| |_|\__,_|
-     
+
 pragma solidity ^0.8.13;
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -32,11 +32,11 @@ contract LessonFactory {
     address public teacherNFT; // TeacherNFT contract address
     address public certificateFactory; // CertificateFactory contract address
     address public owner; // Factory owner
-    
+
     // Track deployed contracts per teacher
     mapping(address => address[]) public teacherContracts; // Teacher => Array of deployed LessonNFT contracts
     mapping(address => uint256) public teacherContractCount; // Teacher => Number of contracts created
-    
+
     //-----------------------constants-----------------------------------------
     /**
      * @dev Minimum price for lessons (25 USDC)
@@ -49,16 +49,12 @@ contract LessonFactory {
     error notATeacher();
     error invalidPrice();
     error teacherBanned();
-    
+
     //-----------------------events-----------------------------------------
     event LessonNFTCreated(
-        address indexed teacher,
-        address indexed lessonNFT,
-        string name,
-        uint256 price,
-        uint256 indexed contractIndex
+        address indexed teacher, address indexed lessonNFT, string name, uint256 price, uint256 indexed contractIndex
     );
-    
+
     //-----------------------constructor-----------------------------------------
     /**
      * @notice Initializes the LessonFactory contract
@@ -77,10 +73,10 @@ contract LessonFactory {
         address _teacherNFT,
         address _certificateFactory
     ) {
-        if (_lessonNFTImplementation == address(0) || 
-            _treasuryContract == address(0) || 
-            _paymentToken == address(0) || 
-            _teacherNFT == address(0)) {
+        if (
+            _lessonNFTImplementation == address(0) || _treasuryContract == address(0) || _paymentToken == address(0)
+                || _teacherNFT == address(0)
+        ) {
             revert zeroAddress();
         }
         lessonNFTImplementation = _lessonNFTImplementation;
@@ -90,7 +86,7 @@ contract LessonFactory {
         certificateFactory = _certificateFactory; // Can be address(0) if certificates not enabled
         owner = msg.sender;
     }
-    
+
     //-----------------------public view functions-----------------------------------------
     /**
      * @notice Gets all LessonNFT contracts created by a teacher
@@ -101,7 +97,7 @@ contract LessonFactory {
     function getTeacherContracts(address teacher) external view returns (address[] memory) {
         return teacherContracts[teacher];
     }
-    
+
     /**
      * @notice Gets the number of LessonNFT contracts created by a teacher
      * @dev Returns the count of contracts deployed by the specified teacher
@@ -111,7 +107,7 @@ contract LessonFactory {
     function getTeacherContractCount(address teacher) external view returns (uint256) {
         return teacherContractCount[teacher];
     }
-    
+
     //-----------------------external functions-----------------------------------------
     /**
      * @notice Creates a new LessonNFT contract for a teacher
@@ -127,27 +123,25 @@ contract LessonFactory {
      * @custom:reverts invalidPrice If price < MINIMUM_PRICE
      * @custom:emits LessonNFTCreated When contract is successfully deployed
      */
-    function createLessonNFT(
-        uint256 teacherTokenId,
-        uint256 price,
-        string memory name,
-        bytes memory data
-    ) external returns (address lessonNFTAddress) {
+    function createLessonNFT(uint256 teacherTokenId, uint256 price, string memory name, bytes memory data)
+        external
+        returns (address lessonNFTAddress)
+    {
         // Verify caller owns the TeacherNFT token
         address tokenOwner = ITeacherNFT(teacherNFT).ownerOf(teacherTokenId);
         if (tokenOwner != msg.sender) {
             revert notATeacher();
         }
-        
+
         // Check if teacher is banned
         // Note: This requires ITeacherNFT to have a teacherBlackListed function
         // For now, we'll assume it's checked elsewhere
-        
+
         // Validate price meets minimum requirement (50 USDC)
         if (price < MINIMUM_PRICE) {
             revert invalidPrice();
         }
-        
+
         // Prepare initialization data
         bytes memory initData = abi.encodeWithSelector(
             LessonNFT.initialize.selector,
@@ -161,19 +155,19 @@ contract LessonFactory {
             name,
             data
         );
-        
+
         // Deploy proxy
         lessonNFTAddress = address(new ERC1967Proxy(lessonNFTImplementation, initData));
-        
+
         // Track the deployed contract
         teacherContracts[msg.sender].push(lessonNFTAddress);
         teacherContractCount[msg.sender]++;
-        
+
         emit LessonNFTCreated(msg.sender, lessonNFTAddress, name, price, teacherContractCount[msg.sender] - 1);
-        
+
         return lessonNFTAddress;
     }
-    
+
     /**
      * @notice Updates the LessonNFT implementation address
      * @dev Only owner can update. Used for upgrading all future LessonNFT deployments.
@@ -191,7 +185,7 @@ contract LessonFactory {
         }
         lessonNFTImplementation = _newImplementation;
     }
-    
+
     /**
      * @notice Transfers factory ownership to a new address
      * @dev Only owner can transfer ownership
@@ -209,7 +203,7 @@ contract LessonFactory {
         }
         owner = newOwner;
     }
-    
+
     /**
      * @notice Updates the treasury contract address
      * @dev Only owner can update. Used for changing treasury implementation.
@@ -227,7 +221,7 @@ contract LessonFactory {
         }
         treasuryContract = _newTreasuryContract;
     }
-    
+
     /**
      * @notice Updates the payment token address
      * @dev Only owner can update. Used for changing payment token (e.g., switching USDC versions).
@@ -245,7 +239,7 @@ contract LessonFactory {
         }
         paymentToken = _newPaymentToken;
     }
-    
+
     /**
      * @notice Updates the CertificateFactory contract address
      * @dev Only owner can update. Used for enabling certificates or changing factory implementation.

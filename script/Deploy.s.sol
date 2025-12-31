@@ -97,10 +97,7 @@ contract GnosislandDeploymentScript is Script {
         // Step 2: Deploy EscrowNFT
         console.log("\n[2/9] Deploying EscrowNFT...");
         escrowNFTImplementation = address(new EscrowNFT());
-        bytes memory escrowInit = abi.encodeWithSelector(
-            EscrowNFT.initialize.selector,
-            owner
-        );
+        bytes memory escrowInit = abi.encodeWithSelector(EscrowNFT.initialize.selector, owner);
         escrowNFTProxy = address(new ERC1967Proxy(escrowNFTImplementation, escrowInit));
         console.log("EscrowNFT Implementation:", escrowNFTImplementation);
         console.log("EscrowNFT Proxy:", escrowNFTProxy);
@@ -108,12 +105,8 @@ contract GnosislandDeploymentScript is Script {
         // Step 3: Deploy TeacherNFT
         console.log("\n[3/9] Deploying TeacherNFT...");
         teacherNFTImplementation = address(new TeacherNft());
-        bytes memory teacherInit = abi.encodeWithSelector(
-            TeacherNft.initialize.selector,
-            "Gnosisland Teacher NFT",
-            "GTEACH",
-            owner
-        );
+        bytes memory teacherInit =
+            abi.encodeWithSelector(TeacherNft.initialize.selector, "Gnosisland Teacher NFT", "GTEACH", owner);
         teacherNFTProxy = address(new ERC1967Proxy(teacherNFTImplementation, teacherInit));
         console.log("TeacherNFT Implementation:", teacherNFTImplementation);
         console.log("TeacherNFT Proxy:", teacherNFTProxy);
@@ -166,15 +159,17 @@ contract GnosislandDeploymentScript is Script {
         // LessonNFT constructor disables initializers, so we can deploy it directly
         address lessonNFTImplementation = address(new LessonNFT());
         console.log("LessonNFT Implementation:", lessonNFTImplementation);
-        
+
         // Deploy LessonFactory with constructor parameters
-        lessonFactoryProxy = address(new LessonFactory(
-            lessonNFTImplementation,  // _lessonNFTImplementation
-            treasuryProxy,            // _treasuryContract
-            usdcToken,                // _paymentToken
-            teacherNFTProxy,          // _teacherNFT
-            certificateFactoryProxy   // _certificateFactory
-        ));
+        lessonFactoryProxy = address(
+            new LessonFactory(
+                lessonNFTImplementation, // _lessonNFTImplementation
+                treasuryProxy, // _treasuryContract
+                usdcToken, // _paymentToken
+                teacherNFTProxy, // _teacherNFT
+                certificateFactoryProxy // _certificateFactory
+            )
+        );
         lessonFactoryImplementation = lessonFactoryProxy; // Same address for non-upgradeable
         console.log("LessonFactory Implementation:", lessonFactoryImplementation);
         console.log("LessonFactory Proxy:", lessonFactoryProxy);
@@ -187,11 +182,8 @@ contract GnosislandDeploymentScript is Script {
         // Step 11: Deploy DiscountBallot
         console.log("\n[9/9] Deploying DiscountBallot...");
         discountBallotImplementation = address(new DiscountBallot());
-        bytes memory ballotInit = abi.encodeWithSelector(
-            DiscountBallot.initialize.selector,
-            minimumDepositPerVote,
-            owner
-        );
+        bytes memory ballotInit =
+            abi.encodeWithSelector(DiscountBallot.initialize.selector, minimumDepositPerVote, owner);
         discountBallotProxy = address(new ERC1967Proxy(discountBallotImplementation, ballotInit));
         console.log("DiscountBallot Implementation:", discountBallotImplementation);
         console.log("DiscountBallot Proxy:", discountBallotProxy);

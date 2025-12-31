@@ -239,7 +239,7 @@ contract DiscountBallot is Ownable, Initializable, UUPSUpgradeable {
         } else if (option == Discounts.OPTION_TWO) {
             $.getOptionTwoVotes[proposalId] += msg.value;
             $.votes[proposalId].voteAmountForOptionTwo += msg.value;
-        } else if (option == Discounts.OPTION_THREE) {
+        } else{
             $.getOptionThreeVotes[proposalId] += msg.value;
             $.votes[proposalId].voteAmountForOptionThree += msg.value;
         }

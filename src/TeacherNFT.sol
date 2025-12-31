@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-//  ____                 _       _                    _ 
+//  ____                 _       _                    _
 // / ___|_ __   ___  ___(_)___  | |    __ _ _ __   __| |
 //| |  _| '_ \ / _ \/ __| / __| | |   / _` | '_ \ / _` |
 //| |_| | | | | (_) \__ \ \__ \ | |__| (_| | | | | (_| |
 // \____|_| |_|\___/|___/_|___/ |_____\__,_|_| |_|\__,_|
-     
+
 pragma solidity ^0.8.13;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -19,7 +19,7 @@ pragma solidity ^0.8.13;
 /**
  * @notice Teacher NFTs can be minted only by GnosislandFactory.
  * @author jovemjeune
- * @dev    Creates an nft in order to authenticate users during 
+ * @dev    Creates an nft in order to authenticate users during
  */
 contract TeacherNft is ERC721, Ownable, Initializable, UUPSUpgradeable {
     using StorageSlot for *;
@@ -39,7 +39,8 @@ contract TeacherNft is ERC721, Ownable, Initializable, UUPSUpgradeable {
     }
 
     // keccak256(abi.encode(uint256(keccak256("gnosisland.storage.TeacherNFT")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant TEACHER_NFT_STORAGE_LOCATION = 0xf4327a6f48f9a32df6a39c24f65cef1060ec7e47250f7271db03107370883f00;
+    bytes32 private constant TEACHER_NFT_STORAGE_LOCATION =
+        0xf4327a6f48f9a32df6a39c24f65cef1060ec7e47250f7271db03107370883f00;
 
     function _getTeacherNFTStorage() private pure returns (TeacherNFTStorage storage $) {
         assembly ("memory-safe") {
@@ -94,7 +95,7 @@ contract TeacherNft is ERC721, Ownable, Initializable, UUPSUpgradeable {
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    function getLatestTokenId() external view returns(uint256){
+    function getLatestTokenId() external view returns (uint256) {
         TeacherNFTStorage storage $ = _getTeacherNFTStorage();
         return $.latestTokenId;
     }
@@ -120,21 +121,16 @@ contract TeacherNft is ERC721, Ownable, Initializable, UUPSUpgradeable {
      * @custom:reverts accountAlreadyOwnsNFT If teacher already has an NFT
      * @custom:reverts teacherBanned If teacher is blacklisted
      */
-    function mintTeacherNFT(
-        address teacher, 
-        string memory name_,
-        bytes memory data
-    ) external onlyOwner{
+    function mintTeacherNFT(address teacher, string memory name_, bytes memory data) external onlyOwner {
         TeacherNFTStorage storage $ = _getTeacherNFTStorage();
-        if($.nftCreated[teacher]){
+        if ($.nftCreated[teacher]) {
             revert accountAlreadyOwnsNFT();
         }
-        $.nftCreated[teacher] = true; //ensure each teacher has only one nft 
+        $.nftCreated[teacher] = true; //ensure each teacher has only one nft
         _safeMint(teacher, $.latestTokenId, data);
         $.latestTokenId++;
     }
 
-    
     /**
      * @notice Bans a teacher (blocks all actions)
      * @dev Only owner can ban. Used for teachers sharing NSFW content, copyright violations, or unsafe content.
@@ -142,7 +138,7 @@ contract TeacherNft is ERC721, Ownable, Initializable, UUPSUpgradeable {
      * @custom:security Only callable by owner
      * @custom:notice Sharing NSFW content or copyright violations is prohibited and will result in account ban
      */
-    function banTeacher(address teacher) external onlyOwner{
+    function banTeacher(address teacher) external onlyOwner {
         TeacherNFTStorage storage $ = _getTeacherNFTStorage();
         $.teacherBlackListed[teacher] = true;
     }
@@ -159,12 +155,12 @@ contract TeacherNft is ERC721, Ownable, Initializable, UUPSUpgradeable {
     function _update(address to, uint256 tokenId, address auth) internal virtual override returns (address) {
         TeacherNFTStorage storage $ = _getTeacherNFTStorage();
         address from = _ownerOf(tokenId);
-        
+
         // Prevent blacklisted teachers from transferring their NFTs
-        if($.teacherBlackListed[from] == true || $.teacherBlackListed[to] == true){
+        if ($.teacherBlackListed[from] == true || $.teacherBlackListed[to] == true) {
             revert teacherBanned();
         }
-        
+
         return super._update(to, tokenId, auth);
     }
 }

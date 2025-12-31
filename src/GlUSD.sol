@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-//  ____                 _       _                    _ 
+//  ____                 _       _                    _
 // / ___|_ __   ___  ___(_)___  | |    __ _ _ __   __| |
 //| |  _| '_ \ / _ \/ __| / __| | |   / _` | '_ \ / _` |
 //| |_| | | | | (_) \__ \ \__ \ | |__| (_| | | | | (_| |
 // \____|_| |_|\___/|___/_|___/ |_____\__,_|_| |_|\__,_|
-     
+
 pragma solidity ^0.8.13;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -47,11 +47,7 @@ contract GlUSD is ERC20, Ownable, Initializable, UUPSUpgradeable {
      * @param initialOwner Address of the initial owner
      * @custom:reverts zeroAddress If _treasuryContract or _usdcToken is address(0)
      */
-    function initialize(
-        address _treasuryContract,
-        address _usdcToken,
-        address initialOwner
-    ) external initializer {
+    function initialize(address _treasuryContract, address _usdcToken, address initialOwner) external initializer {
         if (_treasuryContract == address(0) || _usdcToken == address(0)) {
             revert zeroAddress();
         }

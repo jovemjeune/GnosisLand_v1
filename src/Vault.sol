@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-//  ____                 _       _                    _ 
+//  ____                 _       _                    _
 // / ___|_ __   ___  ___(_)___  | |    __ _ _ __   __| |
 //| |  _| '_ \ / _ \/ __| / __| | |   / _` | '_ \ / _` |
 //| |_| | | | | (_) \__ \ \__ \ | |__| (_| | | | | (_| |
@@ -33,7 +33,7 @@ contract Vault is ERC4626, ReentrancyGuard, Ownable {
     address public treasuryContract; // Treasury contract address
     uint256 private _virtualShares; // Virtual shares to prevent donation attacks
     uint256 private _virtualAssets; // Virtual assets to prevent donation attacks
-    
+
     // Track user shares in vault (GlUSD deposited to vault)
     mapping(address => uint256) public GlUSD_shareOf; // User => GlUSD shares in vault
 
@@ -61,19 +61,19 @@ contract Vault is ERC4626, ReentrancyGuard, Ownable {
      * @custom:reverts zeroAddress If any address parameter is address(0)
      * @custom:security Non-upgradeable for maximum security
      */
-    constructor(
-        address _glusdToken,
-        address _treasuryContract,
-        address initialOwner
-    ) ERC4626(IERC20(_glusdToken)) ERC20("", "") Ownable(initialOwner) {
+    constructor(address _glusdToken, address _treasuryContract, address initialOwner)
+        ERC4626(IERC20(_glusdToken))
+        ERC20("", "")
+        Ownable(initialOwner)
+    {
         if (_glusdToken == address(0) || _treasuryContract == address(0) || initialOwner == address(0)) {
             revert zeroAddress();
         }
-        
+
         treasuryContract = _treasuryContract;
         _virtualShares = INITIAL_VIRTUAL_SHARES;
         _virtualAssets = INITIAL_VIRTUAL_ASSETS;
-        
+
         // Mint initial virtual shares to prevent donation attacks
         _mint(address(this), INITIAL_VIRTUAL_SHARES);
     }
@@ -158,15 +158,15 @@ contract Vault is ERC4626, ReentrancyGuard, Ownable {
         if (assets == 0) {
             revert invalidAmount();
         }
-        
+
         shares = super.deposit(assets, receiver);
-        
+
         // Track user's GlUSD shares in vault
         GlUSD_shareOf[receiver] += shares;
-        
+
         // Notify Treasury to track the shares
         ITreasuryContract(treasuryContract).trackGlUSDShare(receiver, shares);
-        
+
         emit SharesTracked(receiver, shares);
         return shares;
     }
@@ -181,20 +181,21 @@ contract Vault is ERC4626, ReentrancyGuard, Ownable {
      * @custom:security Protected by reentrancy guard
      * @custom:reverts insufficientBalance If owner doesn't have enough shares
      */
-    function withdraw(
-        uint256 assets,
-        address receiver,
-        address owner
-    ) public override nonReentrant returns (uint256 shares) {
+    function withdraw(uint256 assets, address receiver, address owner)
+        public
+        override
+        nonReentrant
+        returns (uint256 shares)
+    {
         shares = previewWithdraw(assets);
-        
+
         if (shares > balanceOf(owner)) {
             revert insufficientBalance();
         }
 
         // Burn shares from owner
         _burn(owner, shares);
-        
+
         // Update tracked shares
         if (GlUSD_shareOf[owner] >= shares) {
             GlUSD_shareOf[owner] -= shares;
@@ -220,20 +221,21 @@ contract Vault is ERC4626, ReentrancyGuard, Ownable {
      * @return assets Amount of assets (USDC) received
      * @custom:security Protected by reentrancy guard
      */
-    function redeem(
-        uint256 shares,
-        address receiver,
-        address owner
-    ) public override nonReentrant returns (uint256 assets) {
+    function redeem(uint256 shares, address receiver, address owner)
+        public
+        override
+        nonReentrant
+        returns (uint256 assets)
+    {
         assets = previewRedeem(shares);
-        
+
         if (shares > balanceOf(owner)) {
             revert insufficientBalance();
         }
 
         // Burn shares from owner
         _burn(owner, shares);
-        
+
         // Update tracked shares
         if (GlUSD_shareOf[owner] >= shares) {
             GlUSD_shareOf[owner] -= shares;
