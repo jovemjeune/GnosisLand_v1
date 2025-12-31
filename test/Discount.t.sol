@@ -5,7 +5,6 @@ import {Test} from "forge-std/Test.sol";
 import {DiscountBallot} from "../src/DiscountBallot.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ProxyFactory} from "../src/proxies/ProxyFactory.sol";
-import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 contract DiscountBallotTest is Test {
     DiscountBallot public impl;
@@ -90,7 +89,13 @@ contract DiscountBallotTest is Test {
     }
 
     function test_Proposal() public {
-        (uint256 proposalId, uint256 discountPrice, address proposalOwner, DiscountBallot.Discounts winnerOption, bool finished) = db.proposal(0);
+        (
+            uint256 proposalId,
+            uint256 discountPrice,
+            address proposalOwner,
+            DiscountBallot.Discounts winnerOption,
+            bool finished
+        ) = db.proposal(0);
         assertEq(proposalId, 0);
         assertEq(discountPrice, 0);
         assertEq(proposalOwner, address(0));
@@ -235,7 +240,13 @@ contract DiscountBallotTest is Test {
         assertEq(proposalId, 1);
         assertEq(db.latestBallotId(), 1);
 
-        (uint256 propId, uint256 propDiscountPrice, address propOwner, DiscountBallot.Discounts propWinnerOption, bool propFinished) = db.proposal(proposalId);
+        (
+            uint256 propId,
+            uint256 propDiscountPrice,
+            address propOwner,
+            DiscountBallot.Discounts propWinnerOption,
+            bool propFinished
+        ) = db.proposal(proposalId);
         assertEq(propId, proposalId);
         assertEq(propDiscountPrice, discountPrice);
         assertEq(propOwner, owner);
