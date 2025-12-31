@@ -5,6 +5,7 @@ cache/
 out/
 forge-cache/
 forge-out/
+lib/
 
 # Broadcast logs (keep structure, ignore local chain)
 !/broadcast
