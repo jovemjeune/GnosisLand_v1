@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-//  ____                 _       _                    _ 
+//  ____                 _       _                    _
 // / ___|_ __   ___  ___(_)___  | |    __ _ _ __   __| |
 //| |  _| '_ \ / _ \/ __| / __| | |   / _` | '_ \ / _` |
 //| |_| | | | | (_) \__ \ \__ \ | |__| (_| | | | | (_| |
 // \____|_| |_|\___/|___/_|___/ |_____\__,_|_| |_|\__,_|
-     
+
 pragma solidity ^0.8.13;
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -22,27 +22,24 @@ contract CertificateNFT is ERC721, Ownable {
     address public lessonNFT; // Only LessonNFT can mint certificates
     address public teacher; // Teacher who owns this certificate contract
     string public baseMetadataURI; // Base URI for certificate metadata (optional)
-    
+
     // One-time mint tracking per lesson
     mapping(uint256 => bool) public lessonFinished; // lessonId => already minted
     mapping(uint256 => address) public lessonToStudent; // lessonId => student address
     mapping(uint256 => string) public lessonMetadata; // lessonId => custom metadata (if provided)
-    
+
     uint256 private _tokenIdCounter; // Internal counter for token IDs
-    
+
     //-----------------------custom errors-----------------------------------------
     error onlyLessonNFT(); // Only LessonNFT can mint
     error alreadyMinted(); // Certificate already minted for this lesson
     error zeroAddress();
-    
+
     //-----------------------events-----------------------------------------
     event CertificateMinted(
-        address indexed student,
-        uint256 indexed lessonId,
-        uint256 indexed tokenId,
-        string metadata
+        address indexed student, uint256 indexed lessonId, uint256 indexed tokenId, string metadata
     );
-    
+
     //-----------------------constructor-----------------------------------------
     /**
      * @notice Initializes the CertificateNFT contract
@@ -52,11 +49,10 @@ contract CertificateNFT is ERC721, Ownable {
      * @param _lessonNFT Address of the LessonNFT contract that can mint certificates
      * @custom:reverts zeroAddress If teacher or lessonNFT is address(0)
      */
-    constructor(
-        address _teacher,
-        string memory _baseMetadataURI,
-        address _lessonNFT
-    ) ERC721("Gnosisland Certificate", "GNOSIS-CERT") Ownable(_teacher) {
+    constructor(address _teacher, string memory _baseMetadataURI, address _lessonNFT)
+        ERC721("Gnosisland Certificate", "GNOSIS-CERT")
+        Ownable(_teacher)
+    {
         if (_teacher == address(0) || _lessonNFT == address(0)) {
             revert zeroAddress();
         }
@@ -64,7 +60,7 @@ contract CertificateNFT is ERC721, Ownable {
         baseMetadataURI = _baseMetadataURI;
         lessonNFT = _lessonNFT;
     }
-    
+
     //-----------------------public view functions-----------------------------------------
     /**
      * @notice Returns the token URI for a certificate
@@ -74,22 +70,22 @@ contract CertificateNFT is ERC721, Ownable {
      */
     function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
         _requireOwned(tokenId);
-        
+
         // If custom metadata exists for this lesson, return it
         string memory customMetadata = lessonMetadata[tokenId];
         if (bytes(customMetadata).length > 0) {
             return customMetadata;
         }
-        
+
         // Otherwise, return base URI + token ID (or just base URI if it's a full URL)
         if (bytes(baseMetadataURI).length > 0) {
             return string(abi.encodePacked(baseMetadataURI, "/", _toString(tokenId)));
         }
-        
+
         // If no metadata at all, return empty (frontend can use lesson name)
         return "";
     }
-    
+
     //-----------------------external functions-----------------------------------------
     /**
      * @notice Mints a certificate NFT to a student after lesson completion
@@ -104,29 +100,27 @@ contract CertificateNFT is ERC721, Ownable {
      * @custom:reverts alreadyMinted If certificate already minted for this lesson
      * @custom:emits CertificateMinted When certificate is successfully minted
      */
-    function mintCertificate(
-        uint256 lessonId,
-        address student,
-        string memory metadata,
-        string memory lessonName
-    ) external returns (uint256 tokenId) {
+    function mintCertificate(uint256 lessonId, address student, string memory metadata, string memory lessonName)
+        external
+        returns (uint256 tokenId)
+    {
         // Only LessonNFT can mint
         if (msg.sender != lessonNFT) {
             revert onlyLessonNFT();
         }
-        
+
         // Check if certificate already minted for this lesson
         if (lessonFinished[lessonId] || lessonToStudent[lessonId] != address(0)) {
             revert alreadyMinted();
         }
-        
+
         // Mark lesson as finished and track student
         lessonFinished[lessonId] = true;
         lessonToStudent[lessonId] = student;
-        
+
         // Generate token ID (use lessonId as tokenId for simplicity, or use counter)
         tokenId = lessonId; // Using lessonId as tokenId ensures uniqueness
-        
+
         // Store metadata if provided, otherwise store lesson name
         if (bytes(metadata).length > 0) {
             lessonMetadata[tokenId] = metadata;
@@ -134,15 +128,15 @@ contract CertificateNFT is ERC721, Ownable {
             // If no metadata provided, use lesson name
             lessonMetadata[tokenId] = lessonName;
         }
-        
+
         // Mint soulbound NFT to student
         _safeMint(student, tokenId);
-        
+
         emit CertificateMinted(student, lessonId, tokenId, lessonMetadata[tokenId]);
-        
+
         return tokenId;
     }
-    
+
     /**
      * @notice Updates the base metadata URI
      * @dev Only owner (teacher) can update
@@ -152,7 +146,7 @@ contract CertificateNFT is ERC721, Ownable {
     function updateBaseMetadataURI(string memory _newBaseMetadataURI) external onlyOwner {
         baseMetadataURI = _newBaseMetadataURI;
     }
-    
+
     /**
      * @notice Updates the LessonNFT address (for upgrades)
      * @dev Only owner can update
@@ -166,7 +160,7 @@ contract CertificateNFT is ERC721, Ownable {
         }
         lessonNFT = _newLessonNFT;
     }
-    
+
     //-----------------------internal functions-----------------------------------------
     /**
      * @notice Prevents transfer of soulbound certificates
@@ -179,7 +173,7 @@ contract CertificateNFT is ERC721, Ownable {
     function transferFrom(address from, address to, uint256 tokenId) public virtual override {
         revert("Soulbound: Cannot transfer certificates");
     }
-    
+
     /**
      * @notice Prevents approval of soulbound certificates
      * @dev Overrides ERC721 approve to prevent transfers
@@ -189,7 +183,7 @@ contract CertificateNFT is ERC721, Ownable {
     function approve(address to, uint256 tokenId) public virtual override {
         revert("Soulbound: Cannot approve certificates");
     }
-    
+
     /**
      * @notice Prevents setting approval for all
      * @dev Overrides ERC721 setApprovalForAll to prevent transfers
@@ -199,7 +193,7 @@ contract CertificateNFT is ERC721, Ownable {
     function setApprovalForAll(address operator, bool approved) public virtual override {
         revert("Soulbound: Cannot approve certificates");
     }
-    
+
     /**
      * @notice Converts uint256 to string
      * @dev Internal helper function

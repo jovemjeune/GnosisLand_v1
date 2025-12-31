@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-//  ____                 _       _                    _ 
+//  ____                 _       _                    _
 // / ___|_ __   ___  ___(_)___  | |    __ _ _ __   __| |
 //| |  _| '_ \ / _ \/ __| / __| | |   / _` | '_ \ / _` |
 //| |_| | | | | (_) \__ \ \__ \ | |__| (_| | | | | (_| |
 // \____|_| |_|\___/|___/_|___/ |_____\__,_|_| |_|\__,_|
-     
+
 pragma solidity ^0.8.13;
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -158,7 +158,7 @@ contract EscrowNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
         // In production, add access control
 
         (address referrer, uint256 tokenId) = validateReferralCode(referralCode);
-        
+
         emit ReferralCodeUsed(referrer, referred, tokenId);
     }
 }

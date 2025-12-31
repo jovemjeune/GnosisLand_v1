@@ -18,22 +18,21 @@ library LessonPricing {
      * @return isCouponUsed Whether coupon was applied
      * @return isReferralUsed Whether referral discount was applied
      */
-    function calculatePrice(
-        uint256 basePrice,
-        bytes32 couponCode,
-        bool hasReferral,
-        bool hasUsedReferral
-    ) internal pure returns (uint256 finalPrice, bool isCouponUsed, bool isReferralUsed) {
+    function calculatePrice(uint256 basePrice, bytes32 couponCode, bool hasReferral, bool hasUsedReferral)
+        internal
+        pure
+        returns (uint256 finalPrice, bool isCouponUsed, bool isReferralUsed)
+    {
         finalPrice = basePrice;
         isCouponUsed = false;
         isReferralUsed = false;
-        
+
         // Apply coupon discount (15%) if valid
         if (couponCode != bytes32(0)) {
             finalPrice = (basePrice * 85) / 100; // 15% discount
             isCouponUsed = true;
         }
-        
+
         // Apply referral discount (10%) if valid and not used before (takes precedence)
         if (hasReferral && !hasUsedReferral) {
             finalPrice = (basePrice * 90) / 100; // 10% discount
@@ -41,7 +40,7 @@ library LessonPricing {
             isCouponUsed = false; // Referral takes precedence
         }
     }
-    
+
     /**
      * @notice Calculates fee distribution based on purchase type
      * @param finalPrice Final price after discounts
@@ -51,11 +50,11 @@ library LessonPricing {
      * @return teacherAmount Amount to teacher
      * @return referralReward Reward to referrer (0 if not applicable)
      */
-    function calculateFees(
-        uint256 finalPrice,
-        bool isReferralUsed,
-        bool isCouponUsed
-    ) internal pure returns (uint256 treasuryFee, uint256 teacherAmount, uint256 referralReward) {
+    function calculateFees(uint256 finalPrice, bool isReferralUsed, bool isCouponUsed)
+        internal
+        pure
+        returns (uint256 treasuryFee, uint256 teacherAmount, uint256 referralReward)
+    {
         if (isReferralUsed) {
             // With referral: 10% to referrer, 10% to protocol, 80% to teacher
             referralReward = (finalPrice * 10) / 100;

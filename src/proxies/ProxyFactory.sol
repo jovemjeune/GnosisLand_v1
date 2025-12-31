@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-//  ____                 _       _                    _ 
+//  ____                 _       _                    _
 // / ___|_ __   ___  ___(_)___  | |    __ _ _ __   __| |
 //| |  _| '_ \ / _ \/ __| / __| | |   / _` | '_ \ / _` |
 //| |_| | | | | (_) \__ \ \__ \ | |__| (_| | | | | (_| |
 // \____|_| |_|\___/|___/_|___/ |_____\__,_|_| |_|\__,_|
-     
+
 pragma solidity ^0.8.13;
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -86,12 +86,7 @@ contract ProxyFactory {
         string memory symbol,
         address initialOwner
     ) external returns (address proxy) {
-        bytes memory initData = abi.encodeWithSelector(
-            TeacherNft.initialize.selector,
-            name,
-            symbol,
-            initialOwner
-        );
+        bytes memory initData = abi.encodeWithSelector(TeacherNft.initialize.selector, name, symbol, initialOwner);
 
         proxy = address(new ERC1967Proxy(implementation, initData));
         emit TeacherNFTProxyDeployed(proxy, implementation);
@@ -104,16 +99,12 @@ contract ProxyFactory {
      * @param initialOwner The initial owner address
      * @return proxy The address of the deployed proxy contract
      */
-    function deployDiscountBallotProxy(
-        address implementation,
-        uint256 minimumDepositPerVote,
-        address initialOwner
-    ) external returns (address proxy) {
-        bytes memory initData = abi.encodeWithSelector(
-            DiscountBallot.initialize.selector,
-            minimumDepositPerVote,
-            initialOwner
-        );
+    function deployDiscountBallotProxy(address implementation, uint256 minimumDepositPerVote, address initialOwner)
+        external
+        returns (address proxy)
+    {
+        bytes memory initData =
+            abi.encodeWithSelector(DiscountBallot.initialize.selector, minimumDepositPerVote, initialOwner);
 
         proxy = address(new ERC1967Proxy(implementation, initData));
         emit DiscountBallotProxyDeployed(proxy, implementation);
@@ -125,14 +116,8 @@ contract ProxyFactory {
      * @param initialOwner The initial owner address
      * @return proxy The address of the deployed proxy contract
      */
-    function deployEscrowNFTProxy(
-        address implementation,
-        address initialOwner
-    ) external returns (address proxy) {
-        bytes memory initData = abi.encodeWithSelector(
-            EscrowNFT.initialize.selector,
-            initialOwner
-        );
+    function deployEscrowNFTProxy(address implementation, address initialOwner) external returns (address proxy) {
+        bytes memory initData = abi.encodeWithSelector(EscrowNFT.initialize.selector, initialOwner);
 
         proxy = address(new ERC1967Proxy(implementation, initData));
         emit EscrowNFTProxyDeployed(proxy, implementation);
@@ -146,18 +131,12 @@ contract ProxyFactory {
      * @param initialOwner The initial owner address
      * @return proxy The address of the deployed proxy contract
      */
-    function deployGlUSDProxy(
-        address implementation,
-        address treasuryContract,
-        address usdcToken,
-        address initialOwner
-    ) external returns (address proxy) {
-        bytes memory initData = abi.encodeWithSelector(
-            GlUSD.initialize.selector,
-            treasuryContract,
-            usdcToken,
-            initialOwner
-        );
+    function deployGlUSDProxy(address implementation, address treasuryContract, address usdcToken, address initialOwner)
+        external
+        returns (address proxy)
+    {
+        bytes memory initData =
+            abi.encodeWithSelector(GlUSD.initialize.selector, treasuryContract, usdcToken, initialOwner);
 
         proxy = address(new ERC1967Proxy(implementation, initData));
         emit GlUSDProxyDeployed(proxy, implementation);

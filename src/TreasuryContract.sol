@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-//  ____                 _       _                    _ 
+//  ____                 _       _                    _
 // / ___|_ __   ___  ___(_)___  | |    __ _ _ __   __| |
 //| |  _| '_ \ / _ \/ __| / __| | |   / _` | '_ \ / _` |
 //| |_| | | | | (_) \__ \ \__ \ | |__| (_| | | | | (_| |
@@ -45,29 +45,29 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
     address public lessonNFT; // LessonNFT contract address (authorized caller)
     address public vault; // Vault contract address (ERC4626)
     bool public paused; // Pause mechanism for emergency stops
-    
+
     // Vault tracking (ERC4626-style)
     uint256 public totalAssetsStaked; // Total USDC staked in Morpho + Aave
     uint256 public totalShares; // Total GlUSD shares minted
     uint256 public morphoAssets; // USDC staked in Morpho
     uint256 public aaveAssets; // USDC staked in Aave
-    
+
     // Protocol funds tracking (separate from staker funds)
     uint256 public protocolFunds; // Total protocol funds (never mixed with staker funds)
-    
+
     // Allocation percentages
     uint256 public morphoAllocationPercent; // 90%
     uint256 public aaveAllocationPercent; // 10%
-    
+
     // User tracking
     mapping(address => uint256) public underlyingBalanceOf; // User => USDC deposited/referral rewards (1:1 with GlUSD minted)
     mapping(address => uint256) public GlUSD_shareOf; // User => GlUSD shares in vault (from Vault deposit)
     mapping(address => uint256) public totalWithdrawn; // User => Total USDC withdrawn (for Invariant 3)
-    
+
     // Legacy tracking (kept for compatibility)
     mapping(address => uint256) public userDeposits; // User => USDC deposited
     mapping(address => uint256) public userShares; // User => GlUSD shares owned
-    
+
     // Referral tracking
     mapping(address => uint256) public referrerStakedCollateral; // Referrer => Total USDC staked from referrals
     mapping(address => uint256) public referrerShares; // Referrer => GlUSD shares from referrals
@@ -86,7 +86,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
     // Track stakes per user/referrer for withdrawal lock
     mapping(address => Stake[]) public userStakes; // User => Array of stakes
     mapping(address => Stake[]) public referrerStakes; // Referrer => Array of referral reward stakes
-    
+
     uint256 public constant LOCK_PERIOD = 1 days; // 1 day lock period
 
     //-----------------------constants-----------------------------------------
@@ -112,7 +112,9 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
     event USDCDeposited(address indexed user, uint256 assets, uint256 shares);
     event GlUSDRedeemed(address indexed user, uint256 shares, uint256 assets);
     event TreasuryFeeReceived(uint256 amount);
-    event ReferralRewardStaked(address indexed referrer, address indexed referred, uint256 rewardAmount, uint256 sharesMinted);
+    event ReferralRewardStaked(
+        address indexed referrer, address indexed referred, uint256 rewardAmount, uint256 sharesMinted
+    );
     event AssetsStaked(address indexed protocol, uint256 amount);
     event YieldAccrued(uint256 totalYield);
     event StakeWithdrawn(address indexed user, uint256 amount, bool isReferral);
@@ -231,7 +233,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
     function getWithdrawableAmount(address user, bool isReferral) public view returns (uint256 withdrawable) {
         Stake[] memory stakes = isReferral ? referrerStakes[user] : userStakes[user];
         uint256 currentTime = block.timestamp;
-        
+
         for (uint256 i = 0; i < stakes.length; i++) {
             if (currentTime >= stakes[i].timestamp + LOCK_PERIOD) {
                 withdrawable += stakes[i].amount;
@@ -249,7 +251,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
     function getLockedAmount(address user, bool isReferral) public view returns (uint256 locked) {
         Stake[] memory stakes = isReferral ? referrerStakes[user] : userStakes[user];
         uint256 currentTime = block.timestamp;
-        
+
         for (uint256 i = 0; i < stakes.length; i++) {
             if (currentTime < stakes[i].timestamp + LOCK_PERIOD) {
                 locked += stakes[i].amount;
@@ -285,7 +287,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
 
         // Track underlying balance (1:1 with GlUSD minted)
         underlyingBalanceOf[msg.sender] += amount;
-        
+
         // Update legacy tracking
         userDeposits[msg.sender] += amount;
         userShares[msg.sender] += shares;
@@ -326,17 +328,17 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         } else {
             userDeposits[msg.sender] = 0;
         }
-        
+
         if (userShares[msg.sender] >= shares) {
             userShares[msg.sender] -= shares;
         } else {
             userShares[msg.sender] = 0;
         }
-        
+
         if (totalShares >= shares) {
             totalShares -= shares;
         }
-        
+
         // Update underlying balance (maintain 1:1)
         // INVARIANT 1: Always subtract shares (1:1), not assets (which might include yield)
         if (underlyingBalanceOf[msg.sender] >= shares) {
@@ -344,7 +346,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         } else {
             underlyingBalanceOf[msg.sender] = 0;
         }
-        
+
         // Track total withdrawn for Invariant 3 (use shares for 1:1 tracking)
         totalWithdrawn[msg.sender] += shares;
 
@@ -413,7 +415,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         }
 
         totalAssetsStaked -= amount;
-        
+
         // Track total withdrawn for Invariant 3
         totalWithdrawn[msg.sender] += amount;
 
@@ -473,7 +475,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         // If referral: amount is 10% (all protocol, no stakers) - referralReward > 0
         // If coupon: amount is 10% (5% protocol + 5% stakers) - referralReward == 0 but amount is 10%
         bool hasReferral = (referralReward > 0 && referrer != address(0));
-        
+
         if (hasReferral) {
             // With referral: amount is 10% (all protocol, no stakers)
             // Track as protocol funds (never mixed with staker funds)
@@ -483,10 +485,10 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
             // Split amount 50/50: half to protocol, half to stakers
             uint256 protocolFee = amount / 2;
             uint256 stakerFee = amount / 2;
-            
+
             // Track protocol fee separately
             protocolFunds += protocolFee;
-            
+
             // Stake the staker fee portion for yield distribution to all GlUSD holders
             // This stakes the assets (90% Morpho, 10% Aave) and adds to totalAssetsStaked
             // Yield will accrue naturally to all GlUSD holders through share value appreciation
@@ -505,10 +507,10 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
     function _processReferralReward(uint256 referralReward, address referrer, address referred) internal {
         // referralReward is already calculated and transferred by LessonNFT
         // It's 10% of the discounted price
-        
+
         // Track referrer's underlying balance (1:1 with GlUSD minted)
         underlyingBalanceOf[referrer] += referralReward;
-        
+
         // Track referrer's staked collateral
         referrerStakedCollateral[referrer] += referralReward;
 
@@ -517,7 +519,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         referrerShares[referrer] += shares;
         referrerTotalRewards[referrer] += referralReward;
         totalShares += shares;
-        
+
         glusdToken.mint(referrer, shares);
 
         emit ReferralRewardStaked(referrer, referred, referralReward, shares);
@@ -587,11 +589,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         totalAssetsStaked += amount;
 
         // Record stake with timestamp for lock tracking
-        Stake memory newStake = Stake({
-            amount: amount,
-            timestamp: block.timestamp,
-            isReferral: isReferral
-        });
+        Stake memory newStake = Stake({amount: amount, timestamp: block.timestamp, isReferral: isReferral});
 
         if (isReferral) {
             referrerStakes[staker].push(newStake);
@@ -616,7 +614,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         // Distribute yield proportionally based on shares
         // Yield increases totalAssets, which increases share value
         totalAssetsStaked += totalYield;
-        
+
         // Yield accrues to all shareholders proportionally
         // No need to track individually - it's reflected in share value
         emit YieldAccrued(totalYield);
@@ -744,12 +742,10 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
      * @custom:reverts fundsNotAvailable If funds are not available
      * @custom:emits VaultWithdrawProcessed When withdrawal is processed
      */
-    function handleVaultWithdraw(
-        address user,
-        uint256 glusdShares,
-        uint256 usdcAmount,
-        address receiver
-    ) external nonReentrant {
+    function handleVaultWithdraw(address user, uint256 glusdShares, uint256 usdcAmount, address receiver)
+        external
+        nonReentrant
+    {
         if (msg.sender != vault) {
             revert unauthorizedCaller();
         }
@@ -761,7 +757,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         // The usdcAmount from vault may include yield appreciation, but we must maintain 1:1
         // Only send back the amount that equals the GlUSD burned (1:1)
         uint256 usdcToSend = glusdShares; // 1:1 ratio
-        
+
         // If vault calculated more (due to yield), that's fine - user gets the yield
         // But we maintain 1:1 ratio in our accounting
         if (usdcAmount < usdcToSend) {
@@ -779,7 +775,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         } else {
             underlyingBalanceOf[user] = 0; // Prevent underflow
         }
-        
+
         // Track total withdrawn for Invariant 3
         totalWithdrawn[user] += usdcToSend;
 
@@ -793,11 +789,11 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         // Check if user has shares in vault to determine protocol source
         uint256 userShare = GlUSD_shareOf[user];
         uint256 totalVaultShares = _getTotalVaultShares();
-        
+
         if (userShare > 0 && totalVaultShares > 0) {
             // Calculate user's share percentage
             uint256 sharePercent = (userShare * 100) / totalVaultShares;
-            
+
             // Determine which protocols to check based on share percentage
             bool checkMorpho = sharePercent >= 10;
             bool checkAave = sharePercent < 90;
@@ -805,12 +801,12 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
 
             // Calculate available USDC (excluding protocol funds)
             uint256 availableUSDC = usdcToken.balanceOf(address(this)) - protocolFunds;
-            
+
             // Send 1:1 amount first (maintains invariant)
             if (availableUSDC >= usdcToSend) {
                 // Treasury has enough funds, send 1:1 amount immediately
                 usdcToken.safeTransfer(receiver, usdcToSend);
-                
+
                 // If vault calculated more (yield), send the excess as yield
                 if (usdcAmount > usdcToSend) {
                     uint256 yieldAmount = usdcAmount - usdcToSend;
@@ -835,7 +831,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
             } else {
                 // Request from protocols based on share percentage
                 uint256 requested = 0;
-                
+
                 if (checkBoth) {
                     requested += _requestFromMorpho(usdcToSend / 2);
                     requested += _requestFromAave(usdcToSend / 2);
@@ -844,12 +840,12 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
                 } else if (checkAave) {
                     requested = _requestFromAave(usdcToSend);
                 }
-                
+
                 // Send 1:1 amount
                 uint256 toSend = availableUSDC + requested;
                 if (toSend > usdcToSend) toSend = usdcToSend;
                 if (toSend > 0) usdcToken.safeTransfer(receiver, toSend);
-                
+
                 // Handle yield if any
                 if (usdcAmount > usdcToSend) {
                     uint256 yieldAmount = usdcAmount - usdcToSend;
@@ -887,7 +883,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
 
         // Calculate user's share percentage
         uint256 sharePercent = (userShare * 100) / totalVaultShares;
-        
+
         // Determine which protocols to check
         bool checkMorpho = sharePercent >= 10;
         bool checkAave = sharePercent < 90;
@@ -895,7 +891,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
 
         // Calculate available yield from protocols
         uint256 availableYield = 0;
-        
+
         if (checkBoth) {
             // Check both Morpho and Aave
             availableYield += _getAvailableYieldFromMorpho();
@@ -910,7 +906,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
 
         // Calculate user's proportional claimable amount
         claimable = (availableYield * userShare) / totalVaultShares;
-        
+
         // Ensure we don't exceed available USDC (excluding protocol funds)
         uint256 availableUSDC = usdcToken.balanceOf(address(this)) - protocolFunds;
         if (claimable > availableUSDC) {
@@ -951,7 +947,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         if (totalWithdrawn[msg.sender] == 0) {
             revert stakeStillLocked(); // Reuse error - user hasn't withdrawn yet
         }
-        
+
         uint256 claimable = this.getClaimableAmount(msg.sender);
         if (claimable == 0) {
             revert nothingToClaim();
@@ -962,13 +958,13 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
 
         // Calculate available USDC (excluding protocol funds)
         uint256 availableUSDC = usdcToken.balanceOf(address(this)) - protocolFunds;
-        
+
         if (availableUSDC < amount) {
             // Request from protocols based on user's share percentage
             uint256 userShare = GlUSD_shareOf[msg.sender];
             uint256 totalVaultShares = _getTotalVaultShares();
             uint256 sharePercent = (userShare * 100) / totalVaultShares;
-            
+
             bool checkMorpho = sharePercent >= 10;
             bool checkAave = sharePercent < 90;
             bool checkBoth = sharePercent > 90;
@@ -985,7 +981,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
 
         // Transfer claimed amount
         usdcToken.safeTransfer(msg.sender, amount);
-        
+
         emit FundsClaimed(msg.sender, amount);
     }
 
@@ -1071,7 +1067,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         }
         // Calculate actual withdrawable amount (may include yield)
         uint256 toWithdraw = amount > morphoAssets ? morphoAssets : amount;
-        
+
         // Withdraw from Morpho Blue market (if market params are set)
         if (morphoMarketParams.loanToken != address(0)) {
             try morphoMarket.withdraw(
@@ -1080,7 +1076,9 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
                 0, // shares = 0 for automatic calculation
                 address(this),
                 address(this)
-            ) returns (uint256 assetsWithdrawn, uint256) {
+            ) returns (
+                uint256 assetsWithdrawn, uint256
+            ) {
                 // Update tracking (use actual withdrawn amount which may include yield)
                 if (assetsWithdrawn >= morphoAssets) {
                     totalAssetsStaked -= morphoAssets;
@@ -1119,13 +1117,9 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         }
         // Calculate actual withdrawable amount (may include yield)
         uint256 toWithdraw = amount > aaveAssets ? aaveAssets : amount;
-        
+
         // Withdraw from Aave v3 Pool
-        try aavePool.withdraw(
-            address(usdcToken),
-            toWithdraw,
-            address(this)
-        ) returns (uint256 assetsWithdrawn) {
+        try aavePool.withdraw(address(usdcToken), toWithdraw, address(this)) returns (uint256 assetsWithdrawn) {
             // Update tracking (use actual withdrawn amount which may include yield)
             if (assetsWithdrawn >= aaveAssets) {
                 totalAssetsStaked -= aaveAssets;
@@ -1162,7 +1156,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
             if (market.totalSupplyShares == 0) {
                 return 0;
             }
-            
+
             // Estimate: if we staked morphoAssets, our current value would be:
             // currentValue = (morphoAssets / initialSupplyAssets) * currentSupplyAssets
             // yield = currentValue - morphoAssets

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 
-//  ____                 _       _                    _ 
+//  ____                 _       _                    _
 // / ___|_ __   ___  ___(_)___  | |    __ _ _ __   __| |
 //| |  _| '_ \ / _ \/ __| / __| | |   / _` | '_ \ / _` |
 //| |_| | | | | (_) \__ \ \__ \ | |__| (_| | | | | (_| |
 // \____|_| |_|\___/|___/_|___/ |_____\__,_|_| |_|\__,_|
-     
+
 pragma solidity ^0.8.13;
-                               
-import {ERC721}  from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+
+import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -18,9 +18,9 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
 // Interface for TreasuryContract
 interface ITreasuryContract {
     function receiveTreasuryFee(
-        uint256 amount, 
-        address buyer, 
-        address teacher, 
+        uint256 amount,
+        address buyer,
+        address teacher,
         bytes32 referralCode,
         uint256 referralReward,
         address referrer
@@ -37,22 +37,17 @@ interface ITeacherNFT {
 
 // Interface for CertificateFactory
 interface ICertificateFactory {
-    function getOrCreateCertificateContract(
-        address teacher,
-        string memory baseMetadataURI,
-        address lessonNFT
-    ) external returns (address);
+    function getOrCreateCertificateContract(address teacher, string memory baseMetadataURI, address lessonNFT)
+        external
+        returns (address);
     function getTeacherCertificate(address teacher) external view returns (address);
 }
 
 // Interface for CertificateNFT
 interface ICertificateNFT {
-    function mintCertificate(
-        uint256 lessonId,
-        address student,
-        string memory metadata,
-        string memory lessonName
-    ) external returns (uint256);
+    function mintCertificate(uint256 lessonId, address student, string memory metadata, string memory lessonName)
+        external
+        returns (uint256);
 }
 
 /**
@@ -69,12 +64,12 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
     string private _symbol;
     uint256 public price;
     uint256 public originalPrice; // Set by factory, cannot be changed
-    uint256 public latestNFTId; 
-    address public onBehalf; //the teacher's account 
+    uint256 public latestNFTId;
+    address public onBehalf; //the teacher's account
     address public treasuryContract; // Treasury contract address for fees
     bool public lessonsPaused; //blacklisted teacher cannot create or sell lessons
     bytes public data;
-    address public paymentToken;   //usdc 
+    address public paymentToken; //usdc
     address public teacherNFT; // TeacherNFT contract address
     address public certificateFactory; // CertificateFactory contract address
     mapping(uint256 => bytes) public nftData; // lessonId => lesson data
@@ -109,7 +104,9 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
     //-----------------------events-----------------------------------------
     event CouponCodeCreated(address indexed teacher, uint256 indexed teacherTokenId, bytes32 indexed couponCode);
     event CouponCodeUsed(address indexed buyer, bytes32 indexed couponCode, uint256 discountAmount);
-    event LessonPurchasedWithGlUSD(address indexed buyer, uint256 indexed lessonId, uint256 glusdPaid, uint256 finalPrice, address indexed teacher);
+    event LessonPurchasedWithGlUSD(
+        address indexed buyer, uint256 indexed lessonId, uint256 glusdPaid, uint256 finalPrice, address indexed teacher
+    );
     event CertificateMinted(address indexed student, uint256 indexed lessonId, uint256 indexed certificateTokenId);
 
     //-----------------------constructor (disabled for upgradeable)-----------------------------------------
@@ -140,11 +137,10 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
         address _paymentToken,
         address _teacherNFT,
         address _certificateFactory,
-        uint256 _price, 
-        string memory name_, 
-        bytes memory _data) 
-        external initializer 
-    {
+        uint256 _price,
+        string memory name_,
+        bytes memory _data
+    ) external initializer {
         // Validate price meets minimum requirement
         // Ensures 3% staking fee >= 1 even with 50% discount + 5% coupon fee
         if (_price < MINIMUM_PRICE) {
@@ -163,7 +159,7 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
         certificateFactory = _certificateFactory;
         data = _data;
         paymentToken = _paymentToken;
-        
+
         // Set owner (Ownable doesn't have initializer, so we use internal function)
         _transferOwnership(factory);
     }
@@ -185,12 +181,12 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
         return _symbol;
     }
 
-    //-----------------------public function----------------------------------------- 
+    //-----------------------public function-----------------------------------------
     function transferFrom(address, address, uint256) public virtual override {
         revert soulboundToken();
     }
 
-    //-----------------------external functions----------------------------------------- 
+    //-----------------------external functions-----------------------------------------
     /**
      * @notice Creates a new lesson that can be purchased by students
      * @dev Only the owner (factory) can create lessons. Each lesson gets a unique ID.
@@ -201,7 +197,7 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
      * @custom:reverts contractPaused If lessons are paused
      */
     function createLesson(bytes memory lessonData, string memory certMetadata) external onlyOwner returns (uint256) {
-        if(lessonsPaused) revert contractPaused();
+        if (lessonsPaused) revert contractPaused();
         uint256 lessonId = latestNFTId++;
         nftData[lessonId] = lessonData;
         if (bytes(certMetadata).length > 0) certificateMetadata[lessonId] = certMetadata;
@@ -222,20 +218,20 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
         if (teacherNFT == address(0)) {
             revert zeroAddress();
         }
-        
+
         address tokenOwner = ITeacherNFT(teacherNFT).ownerOf(teacherTokenId);
         if (tokenOwner != msg.sender) {
             revert notATeacher();
         }
-        
+
         // Generate unique coupon code (collision extremely unlikely)
-        couponCode = keccak256(abi.encodePacked(
-            msg.sender, teacherTokenId, block.timestamp, block.prevrandao, latestNFTId, block.number
-        ));
-        
+        couponCode = keccak256(
+            abi.encodePacked(msg.sender, teacherTokenId, block.timestamp, block.prevrandao, latestNFTId, block.number)
+        );
+
         // Store coupon code creator
         couponCodeCreator[couponCode] = msg.sender;
-        
+
         emit CouponCodeCreated(msg.sender, teacherTokenId, couponCode);
     }
 
@@ -254,15 +250,15 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
      * @custom:reverts invalidCouponCode If coupon code is invalid
      * @custom:emits CouponCodeUsed If a coupon code was used
      */
-    function buyLesson(uint256 lessonId, bytes32 couponCode, uint256 paymentAmount, bytes32 referralCode) external{
+    function buyLesson(uint256 lessonId, bytes32 couponCode, uint256 paymentAmount, bytes32 referralCode) external {
         _validatePurchase(lessonId, paymentAmount, userBalance[msg.sender]);
-        
-        (uint256 finalPrice, bool isCouponUsed, bool isReferralUsed, address referrerAddress) = 
+
+        (uint256 finalPrice, bool isCouponUsed, bool isReferralUsed, address referrerAddress) =
             _processDiscounts(couponCode, referralCode);
-        
-        (uint256 treasuryFee, uint256 teacherAmount, uint256 referralReward) = 
+
+        (uint256 treasuryFee, uint256 teacherAmount, uint256 referralReward) =
             _calculateFees(finalPrice, isReferralUsed, isCouponUsed);
-        
+
         _processUSDPayment(finalPrice, treasuryFee, teacherAmount, referralReward, referrerAddress, referralCode);
         _emitEvents(isCouponUsed, couponCode, finalPrice);
         _mintLessonNFT(lessonId, msg.sender);
@@ -285,15 +281,17 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
      * @custom:emits LessonPurchasedWithGlUSD When purchase is completed
      * @custom:emits CouponCodeUsed If a coupon code was used
      */
-    function buyLessonWithGlUSD(uint256 lessonId, bytes32 couponCode, uint256 glusdAmount, bytes32 referralCode) external {
+    function buyLessonWithGlUSD(uint256 lessonId, bytes32 couponCode, uint256 glusdAmount, bytes32 referralCode)
+        external
+    {
         _validatePurchase(lessonId, glusdAmount, 0);
-        
-        (uint256 finalPrice, bool isCouponUsed, bool isReferralUsed, address referrerAddress) = 
+
+        (uint256 finalPrice, bool isCouponUsed, bool isReferralUsed, address referrerAddress) =
             _processDiscounts(couponCode, referralCode);
-        
-        (uint256 treasuryFee, uint256 teacherAmount, uint256 referralReward) = 
+
+        (uint256 treasuryFee, uint256 teacherAmount, uint256 referralReward) =
             _calculateFees(finalPrice, isReferralUsed, isCouponUsed);
-        
+
         _processGlUSDPayment(treasuryFee, teacherAmount, referralReward, referrerAddress, referralCode);
         _emitEvents(isCouponUsed, couponCode, finalPrice);
         _mintLessonNFT(lessonId, msg.sender);
@@ -311,7 +309,7 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
     function setDiscount(uint256 discountPercentage) external onlyOwner {
         uint256 origPrice = originalPrice;
         uint256 newPrice;
-        
+
         if (discountPercentage == 0) {
             newPrice = origPrice;
         } else if (discountPercentage == 10) {
@@ -324,7 +322,7 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
         } else {
             revert invalidDiscountPercentage();
         }
-        
+
         price = newPrice;
     }
 
@@ -341,7 +339,7 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
         }
         treasuryContract = _newTreasuryContract;
     }
-    
+
     /**
      * @notice Updates the CertificateFactory contract address
      * @dev Only owner can update. Used for upgrades or changing certificate factory implementation.
@@ -358,14 +356,14 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
      * @param amount Amount of USDC to withdraw (will withdraw full balance if amount > balance)
      * @custom:reverts nothingToWithdraw If user has no balance or amount is 0
      */
-    function withdraw(uint256 amount) external{ 
+    function withdraw(uint256 amount) external {
         uint256 bal = userBalance[msg.sender];
-        if(bal == 0 || amount == 0) revert nothingToWithdraw();
+        if (bal == 0 || amount == 0) revert nothingToWithdraw();
         uint256 withdrawAmount = bal <= amount ? bal : amount;
         userBalance[msg.sender] = bal - withdrawAmount;
         IERC20(paymentToken).safeTransfer(msg.sender, withdrawAmount);
     }
-    
+
     /**
      * @notice Deposits USDC to user's balance in this contract
      * @dev Allows users to deposit USDC to their balance for future purchases
@@ -373,39 +371,37 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
      * @custom:reverts contractPaused If lessons are paused
      * @custom:security User must approve this contract to spend USDC before calling
      */
-    function deposit(uint256 amount) external{
-        if(lessonsPaused) revert contractPaused();
+    function deposit(uint256 amount) external {
+        if (lessonsPaused) revert contractPaused();
         IERC20(paymentToken).safeTransferFrom(msg.sender, address(this), amount);
         userBalance[msg.sender] += amount;
     }
 
-    //-----------------------internal functions----------------------------------------- 
+    //-----------------------internal functions-----------------------------------------
     /**
      * @notice Validates purchase parameters
      */
     function _validatePurchase(uint256 lessonId, uint256 paymentAmount, uint256 userBal) internal view {
-        if(lessonId >= latestNFTId || lessonsPaused) revert lessonIsNotAvailable();
-        if(paymentAmount < price && userBal < price) revert unsufficientPayment();
+        if (lessonId >= latestNFTId || lessonsPaused) revert lessonIsNotAvailable();
+        if (paymentAmount < price && userBal < price) revert unsufficientPayment();
     }
-    
+
     /**
      * @notice Processes discounts (coupon and referral)
      * @dev Returns final price and discount flags
      */
-    function _processDiscounts(bytes32 couponCode, bytes32 referralCode) internal returns (
-        uint256 finalPrice, 
-        bool isCouponUsed, 
-        bool isReferralUsed, 
-        address referrerAddress
-    ) {
+    function _processDiscounts(bytes32 couponCode, bytes32 referralCode)
+        internal
+        returns (uint256 finalPrice, bool isCouponUsed, bool isReferralUsed, address referrerAddress)
+    {
         isCouponUsed = false;
         isReferralUsed = false;
         referrerAddress = address(0);
         bool hasReferral = false;
-        
+
         // Initialize finalPrice to price (no discount by default)
         finalPrice = price;
-        
+
         // Validate coupon
         if (couponCode != bytes32(0)) {
             if (couponCodesUsed[couponCode]) revert couponCodeAlreadyUsed();
@@ -413,11 +409,13 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
             couponCodesUsed[couponCode] = true;
             isCouponUsed = true;
         }
-        
+
         // Validate referral (takes precedence)
         if (referralCode != bytes32(0) && !hasUsedReferralDiscount[msg.sender]) {
             // Use try-catch to handle reverts gracefully
-            try ITreasuryContract(treasuryContract).validateReferralCode(referralCode) returns (address referrer, uint256) {
+            try ITreasuryContract(treasuryContract).validateReferralCode(referralCode) returns (
+                address referrer, uint256
+            ) {
                 if (referrer != address(0) && referrer != msg.sender) {
                     referrerAddress = referrer;
                     hasUsedReferralDiscount[msg.sender] = true;
@@ -428,7 +426,7 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
                 // Invalid referral code - ignore and continue without referral discount
             }
         }
-        
+
         // Calculate final price
         if (hasReferral) {
             finalPrice = (price * 90) / 100;
@@ -438,15 +436,15 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
             finalPrice = (price * 50) / 100;
         }
     }
-    
+
     /**
      * @notice Calculates fee distribution
      */
-    function _calculateFees(
-        uint256 finalPrice,
-        bool isReferralUsed,
-        bool isCouponUsed
-    ) internal pure returns (uint256 treasuryFee, uint256 teacherAmount, uint256 referralReward) {
+    function _calculateFees(uint256 finalPrice, bool isReferralUsed, bool isCouponUsed)
+        internal
+        pure
+        returns (uint256 treasuryFee, uint256 teacherAmount, uint256 referralReward)
+    {
         if (isReferralUsed) {
             referralReward = (finalPrice * 10) / 100;
             treasuryFee = (finalPrice * 10) / 100;
@@ -459,7 +457,7 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
             teacherAmount = finalPrice - treasuryFee;
         }
     }
-    
+
     /**
      * @notice Processes USDC payment and distributes fees
      */
@@ -471,7 +469,7 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
         address referrerAddress,
         bytes32 referralCode
     ) internal {
-        if(userBalance[msg.sender] >= finalPrice) {
+        if (userBalance[msg.sender] >= finalPrice) {
             userBalance[msg.sender] -= finalPrice;
         } else {
             IERC20(paymentToken).safeTransferFrom(msg.sender, address(this), finalPrice);
@@ -482,10 +480,15 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
         if (treasuryFee > 0) {
             IERC20(paymentToken).safeTransfer(treasuryContract, treasuryFee);
             // Use low-level call to handle both real contracts and mocks gracefully
-            (bool success, ) = treasuryContract.call(
+            (bool success,) = treasuryContract.call(
                 abi.encodeWithSelector(
                     ITreasuryContract.receiveTreasuryFee.selector,
-                    treasuryFee, msg.sender, onBehalf, referralCode, referralReward, referrerAddress
+                    treasuryFee,
+                    msg.sender,
+                    onBehalf,
+                    referralCode,
+                    referralReward,
+                    referrerAddress
                 )
             );
             // Ignore failures - treasury might be a mock in tests
@@ -494,7 +497,7 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
             IERC20(paymentToken).safeTransfer(onBehalf, teacherAmount);
         }
     }
-    
+
     /**
      * @notice Processes GlUSD payment and distributes fees
      */
@@ -512,10 +515,13 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
         }
         if (treasuryFee > 0) {
             tc.handleGlUSDPayment(treasuryFee, msg.sender, treasuryContract);
-            try tc.receiveTreasuryFee(treasuryFee, msg.sender, onBehalf, referralCode, referralReward, referrerAddress) {} catch {}
+            try tc.receiveTreasuryFee(
+                treasuryFee, msg.sender, onBehalf, referralCode, referralReward, referrerAddress
+            ) {}
+                catch {}
         }
     }
-    
+
     /**
      * @notice Emits events for coupon usage
      */
@@ -524,7 +530,7 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
             emit CouponCodeUsed(msg.sender, couponCode, price - finalPrice);
         }
     }
-    
+
     /**
      * @notice Mints lesson NFT and certificate
      */
@@ -534,25 +540,27 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
         _safeMint(student, tokenId, data);
         _mintCertificate(lessonId, student);
     }
-    
+
     /**
      * @notice Mints a certificate NFT for a student after lesson purchase
      * @dev Internal function that calls CertificateFactory to mint certificate
      */
     function _mintCertificate(uint256 lessonId, address student) internal {
         if (certificateFactory == address(0)) return;
-        
-        try ICertificateFactory(certificateFactory).getOrCreateCertificateContract(
-            onBehalf, "", address(this)
-        ) returns (address certContract) {
-            try ICertificateNFT(certContract).mintCertificate(
-                lessonId, student, certificateMetadata[lessonId], _name
-            ) returns (uint256 tokenId) {
+
+        try ICertificateFactory(certificateFactory)
+            .getOrCreateCertificateContract(onBehalf, "", address(this)) returns (
+            address certContract
+        ) {
+            try ICertificateNFT(certContract)
+                .mintCertificate(lessonId, student, certificateMetadata[lessonId], _name) returns (
+                uint256 tokenId
+            ) {
                 emit CertificateMinted(student, lessonId, tokenId);
             } catch {}
         } catch {}
     }
-    
+
     /**
      * @notice Overrides ERC721 _update to implement soulbound mechanism
      * @dev Allows minting (from == address(0)) but blocks all transfers between addresses
@@ -564,12 +572,12 @@ contract LessonNFT is ERC721, Ownable, Initializable, UUPSUpgradeable {
      */
     function _update(address to, uint256 tokenId, address auth) internal virtual override returns (address) {
         address from = _ownerOf(tokenId);
-        
+
         // Allow minting (from == address(0)) but block all transfers between addresses
         if (from != address(0) && to != address(0)) {
             revert soulboundToken();
         }
-        
+
         // Call parent _update for minting/burning
         return super._update(to, tokenId, auth);
     }
