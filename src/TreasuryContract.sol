@@ -64,10 +64,6 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
     mapping(address => uint256) public GlUSD_shareOf; // User => GlUSD shares in vault (from Vault deposit)
     mapping(address => uint256) public totalWithdrawn; // User => Total USDC withdrawn (for Invariant 3)
 
-    // Legacy tracking (kept for compatibility)
-    mapping(address => uint256) public userDeposits; // User => USDC deposited
-    mapping(address => uint256) public userShares; // User => GlUSD shares owned
-
     // Referral tracking
     mapping(address => uint256) public referrerStakedCollateral; // Referrer => Total USDC staked from referrals
     mapping(address => uint256) public referrerShares; // Referrer => GlUSD shares from referrals
@@ -287,10 +283,6 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
 
         // Track underlying balance (1:1 with GlUSD minted)
         underlyingBalanceOf[msg.sender] += amount;
-
-        // Update legacy tracking
-        userDeposits[msg.sender] += amount;
-        userShares[msg.sender] += shares;
         totalShares += shares;
 
         emit USDCDeposited(msg.sender, amount, shares);
@@ -321,23 +313,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
 
         // Burn GlUSD shares
         glusdToken.burn(msg.sender, shares);
-
-        // Update tracking (prevent underflow)
-        if (userDeposits[msg.sender] >= assets) {
-            userDeposits[msg.sender] -= assets;
-        } else {
-            userDeposits[msg.sender] = 0;
-        }
-
-        if (userShares[msg.sender] >= shares) {
-            userShares[msg.sender] -= shares;
-        } else {
-            userShares[msg.sender] = 0;
-        }
-
-        if (totalShares >= shares) {
-            totalShares -= shares;
-        }
+        if (totalShares >= shares) totalShares -= shares;
 
         // Update underlying balance (maintain 1:1)
         // INVARIANT 1: Always subtract shares (1:1), not assets (which might include yield)
@@ -1055,144 +1031,68 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         return IVault(vault).totalSupply();
     }
 
-    /**
-     * @notice Requests USDC from Morpho protocol
-     * @dev Internal function to withdraw from Morpho
-     * @param amount Amount to request
-     * @return Amount actually received
-     */
     function _requestFromMorpho(uint256 amount) internal returns (uint256) {
-        if (address(morphoMarket) == address(0) || morphoAssets == 0) {
-            return 0;
+        if (address(morphoMarket) == address(0) || morphoAssets == 0) return 0;
+        uint256 w = amount > morphoAssets ? morphoAssets : amount;
+        if (morphoMarketParams.loanToken == address(0)) {
+            morphoAssets -= w;
+            totalAssetsStaked -= w;
+            return w;
         }
-        // Calculate actual withdrawable amount (may include yield)
-        uint256 toWithdraw = amount > morphoAssets ? morphoAssets : amount;
-
-        // Withdraw from Morpho Blue market (if market params are set)
-        if (morphoMarketParams.loanToken != address(0)) {
-            try morphoMarket.withdraw(
-                morphoMarketParams,
-                toWithdraw,
-                0, // shares = 0 for automatic calculation
-                address(this),
-                address(this)
-            ) returns (
-                uint256 assetsWithdrawn, uint256
-            ) {
-                // Update tracking (use actual withdrawn amount which may include yield)
-                if (assetsWithdrawn >= morphoAssets) {
-                    totalAssetsStaked -= morphoAssets;
-                    morphoAssets = 0;
-                    return morphoAssets; // Return original amount if we can't track yield precisely
-                } else {
-                    morphoAssets -= assetsWithdrawn;
-                    totalAssetsStaked -= assetsWithdrawn;
-                    return assetsWithdrawn;
-                }
-            } catch {
-                // If withdraw fails, return tracked amount (for testing)
-                uint256 toReturn = toWithdraw;
-                morphoAssets -= toReturn;
-                totalAssetsStaked -= toReturn;
-                return toReturn;
+        try morphoMarket.withdraw(morphoMarketParams, w, 0, address(this), address(this)) returns (uint256 a, uint256) {
+            if (a >= morphoAssets) {
+                totalAssetsStaked -= morphoAssets;
+                morphoAssets = 0;
+                return morphoAssets;
             }
-        } else {
-            // If Morpho not configured, return tracked amount
-            uint256 toReturn = toWithdraw;
-            morphoAssets -= toReturn;
-            totalAssetsStaked -= toReturn;
-            return toReturn;
+            morphoAssets -= a;
+            totalAssetsStaked -= a;
+            return a;
+        } catch {
+            morphoAssets -= w;
+            totalAssetsStaked -= w;
+            return w;
         }
     }
 
-    /**
-     * @notice Requests USDC from Aave protocol
-     * @dev Internal function to withdraw from Aave
-     * @param amount Amount to request
-     * @return Amount actually received
-     */
     function _requestFromAave(uint256 amount) internal returns (uint256) {
-        if (address(aavePool) == address(0) || aaveAssets == 0) {
-            return 0;
-        }
-        // Calculate actual withdrawable amount (may include yield)
-        uint256 toWithdraw = amount > aaveAssets ? aaveAssets : amount;
-
-        // Withdraw from Aave v3 Pool
-        try aavePool.withdraw(address(usdcToken), toWithdraw, address(this)) returns (uint256 assetsWithdrawn) {
-            // Update tracking (use actual withdrawn amount which may include yield)
-            if (assetsWithdrawn >= aaveAssets) {
+        if (address(aavePool) == address(0) || aaveAssets == 0) return 0;
+        uint256 w = amount > aaveAssets ? aaveAssets : amount;
+        try aavePool.withdraw(address(usdcToken), w, address(this)) returns (uint256 a) {
+            if (a >= aaveAssets) {
                 totalAssetsStaked -= aaveAssets;
                 aaveAssets = 0;
-                return aaveAssets; // Return original amount if we can't track yield precisely
-            } else {
-                aaveAssets -= assetsWithdrawn;
-                totalAssetsStaked -= assetsWithdrawn;
-                return assetsWithdrawn;
+                return aaveAssets;
             }
+            aaveAssets -= a;
+            totalAssetsStaked -= a;
+            return a;
         } catch {
-            // If withdraw fails, return tracked amount (for testing)
-            uint256 toReturn = toWithdraw;
-            aaveAssets -= toReturn;
-            totalAssetsStaked -= toReturn;
-            return toReturn;
+            aaveAssets -= w;
+            totalAssetsStaked -= w;
+            return w;
         }
     }
 
-    /**
-     * @notice Gets available yield from Morpho
-     * @dev Internal view function to check available yield by comparing current balance to staked amount
-     * @return Available yield amount
-     */
     function _getAvailableYieldFromMorpho() internal view returns (uint256) {
         if (address(morphoMarket) == address(0) || morphoAssets == 0 || morphoMarketParams.loanToken == address(0)) {
             return 0;
         }
-        // Query Morpho market for current total supply assets
-        try morphoMarket.market(morphoMarketParams) returns (IMorphoMarket.Market memory market) {
-            // Calculate our share of the market and current value
-            // This is a simplified calculation - in production, track shares precisely
-            // For now, estimate yield based on market growth
-            if (market.totalSupplyShares == 0) {
-                return 0;
-            }
-
-            // Estimate: if we staked morphoAssets, our current value would be:
-            // currentValue = (morphoAssets / initialSupplyAssets) * currentSupplyAssets
-            // yield = currentValue - morphoAssets
-            // Simplified: assume proportional growth
-            uint256 estimatedValue = (morphoAssets * market.totalSupplyAssets) / market.totalSupplyShares;
-            if (estimatedValue > morphoAssets) {
-                return estimatedValue - morphoAssets;
-            }
-            return 0;
+        try morphoMarket.market(morphoMarketParams) returns (IMorphoMarket.Market memory m) {
+            if (m.totalSupplyShares == 0) return 0;
+            uint256 v = (morphoAssets * m.totalSupplyAssets) / m.totalSupplyShares;
+            return v > morphoAssets ? v - morphoAssets : 0;
         } catch {
-            // If query fails, return 0 (for testing)
             return 0;
         }
     }
 
-    /**
-     * @notice Gets available yield from Aave
-     * @dev Internal view function to check available yield using normalized income
-     * @return Available yield amount
-     */
     function _getAvailableYieldFromAave() internal view returns (uint256) {
-        if (address(aavePool) == address(0) || aaveAssets == 0) {
-            return 0;
-        }
-        // Get current normalized income (includes accrued interest)
-        try aavePool.getReserveNormalizedIncome(address(usdcToken)) returns (uint256 currentNormalizedIncome) {
-            // Calculate yield: (currentNormalizedIncome - 1e27) * aaveAssets / 1e27
-            // Normalized income starts at 1e27 and increases with interest
-            // This is a simplified calculation - in production, track initial normalized income
-            if (currentNormalizedIncome > 1e27) {
-                uint256 yieldMultiplier = currentNormalizedIncome - 1e27;
-                return (aaveAssets * yieldMultiplier) / 1e27;
-            }
-            return 0;
+        if (address(aavePool) == address(0) || aaveAssets == 0) return 0;
+        try aavePool.getReserveNormalizedIncome(address(usdcToken)) returns (uint256 n) {
+            if (n <= 1e27) return 0;
+            return (aaveAssets * (n - 1e27)) / 1e27;
         } catch {
-            // If query fails, return 0 (for testing)
             return 0;
         }
     }
