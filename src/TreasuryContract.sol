@@ -18,6 +18,11 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {GlUSD} from "./GlUSD.sol";
 import {IAavePool} from "./interfaces/IAavePool.sol";
 import {IMorphoMarket} from "./interfaces/IMorphoMarket.sol";
+import {TreasuryStakingLibrary} from "./libraries/TreasuryStakingLibrary.sol";
+import {TreasuryYieldLibrary} from "./libraries/TreasuryYieldLibrary.sol";
+import {TreasuryShareLibrary} from "./libraries/TreasuryShareLibrary.sol";
+import {TreasuryStakingLibrary} from "./libraries/TreasuryStakingLibrary.sol";
+import {TreasuryYieldLibrary} from "./libraries/TreasuryYieldLibrary.sol";
 
 // Interface for EscrowNFT
 interface IEscrowNFT {
@@ -407,9 +412,6 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
      * @dev Only callable by LessonNFT. Processes fees, referral rewards, and yield distribution.
      * @dev When no referral/coupon: 10% to protocol, 10% to token stakers (staked for yield)
      * @param amount Amount of USDC received as treasury fee (already transferred to this contract)
-     * @param buyer Address of the student who purchased the lesson
-     * @param teacher Address of the teacher who created the lesson
-     * @param referralCode Optional referral code (bytes32(0) if no referral)
      * @param referralReward Amount already transferred as referral reward (0 if no referral)
      * @param referrer Address of referrer (address(0) if no referral)
      * @custom:security Only callable by LessonNFT contract
@@ -420,9 +422,9 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
      */
     function receiveTreasuryFee(
         uint256 amount,
-        address buyer,
-        address teacher,
-        bytes32 referralCode,
+        address,
+        address,
+        bytes32,
         uint256 referralReward,
         address referrer
     ) external {
@@ -443,7 +445,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         // Handle referral reward if provided
         // referralReward is already transferred to this contract by LessonNFT
         if (referralReward > 0 && referrer != address(0)) {
-            _processReferralReward(referralReward, referrer, buyer);
+            _processReferralReward(referralReward, referrer);
         }
 
         // Determine fee structure based on whether there's a referral or coupon
@@ -477,10 +479,9 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
      * @dev Internal function that mints GlUSD 1:1 for referral reward. User must stake to Vault to earn yield.
      * @param referralReward Amount of referral reward (10% of discounted price, already transferred)
      * @param referrer Address of the referrer
-     * @param referred Address of the referred user
      * @custom:emits ReferralRewardStaked When referral reward is processed
      */
-    function _processReferralReward(uint256 referralReward, address referrer, address referred) internal {
+    function _processReferralReward(uint256 referralReward, address referrer) internal {
         // referralReward is already calculated and transferred by LessonNFT
         // It's 10% of the discounted price
 
@@ -498,7 +499,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
 
         glusdToken.mint(referrer, shares);
 
-        emit ReferralRewardStaked(referrer, referred, referralReward, shares);
+        emit ReferralRewardStaked(referrer, address(0), referralReward, shares);
     }
 
     /**
@@ -510,63 +511,24 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
      * @custom:emits AssetsStaked When assets are staked to each protocol
      */
     function _stakeAssets(uint256 amount, address staker, bool isReferral) internal {
-        uint256 morphoAmount = (amount * morphoAllocationPercent) / 100;
-        uint256 aaveAmount = amount - morphoAmount;
+        (uint256 morphoAmount, uint256 aaveAmount) = TreasuryStakingLibrary.stakeAssets(
+            usdcToken,
+            morphoMarket,
+            aavePool,
+            morphoMarketParams,
+            amount,
+            morphoAllocationPercent
+        );
 
-        // Approve and stake to Morpho (90% allocation)
-        if (morphoAmount > 0 && address(morphoMarket) != address(0) && morphoMarketParams.loanToken != address(0)) {
-            SafeERC20.forceApprove(usdcToken, address(morphoMarket), morphoAmount);
-            // Supply to Morpho Blue market
-            try morphoMarket.supply(
-                morphoMarketParams,
-                morphoAmount,
-                0, // shares = 0 for automatic calculation
-                address(this),
-                ""
-            ) {
-                morphoAssets += morphoAmount;
-                emit AssetsStaked(address(morphoMarket), morphoAmount);
-            } catch {
-                // If Morpho supply fails, fallback to just tracking (for testing)
-                // In production, this should revert or handle gracefully
-                morphoAssets += morphoAmount;
-                emit AssetsStaked(address(morphoMarket), morphoAmount);
-            }
-        } else if (morphoAmount > 0) {
-            // If Morpho not configured, still track for testing
-            morphoAssets += morphoAmount;
-            emit AssetsStaked(address(morphoMarket), morphoAmount);
-        }
-
-        // Approve and stake to Aave (10% allocation)
-        if (aaveAmount > 0 && address(aavePool) != address(0)) {
-            SafeERC20.forceApprove(usdcToken, address(aavePool), aaveAmount);
-            // Supply to Aave v3 Pool
-            try aavePool.supply(
-                address(usdcToken),
-                aaveAmount,
-                address(this),
-                0 // referral code = 0
-            ) {
-                aaveAssets += aaveAmount;
-                emit AssetsStaked(address(aavePool), aaveAmount);
-            } catch {
-                // If Aave supply fails, fallback to just tracking (for testing)
-                // In production, this should revert or handle gracefully
-                aaveAssets += aaveAmount;
-                emit AssetsStaked(address(aavePool), aaveAmount);
-            }
-        } else if (aaveAmount > 0) {
-            // If Aave not configured, still track for testing
-            aaveAssets += aaveAmount;
-            emit AssetsStaked(address(aavePool), aaveAmount);
-        }
-
+        morphoAssets += morphoAmount;
+        aaveAssets += aaveAmount;
         totalAssetsStaked += amount;
+
+        if (morphoAmount > 0) emit AssetsStaked(address(morphoMarket), morphoAmount);
+        if (aaveAmount > 0) emit AssetsStaked(address(aavePool), aaveAmount);
 
         // Record stake with timestamp for lock tracking
         Stake memory newStake = Stake({amount: amount, timestamp: block.timestamp, isReferral: isReferral});
-
         if (isReferral) {
             referrerStakes[staker].push(newStake);
         } else {
@@ -578,21 +540,14 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
      * @notice Distributes yield to all shareholders
      * @dev Internal function that accrues yield to vault. Yield increases share value proportionally.
      * @param totalYield Total yield amount to distribute (3% of treasury fee)
-     * @param buyer Buyer address (unused, kept for future use)
-     * @param teacher Teacher address (unused, kept for future use)
      * @custom:emits YieldAccrued When yield is distributed
      */
-    function _distributeYield(uint256 totalYield, address buyer, address teacher) internal {
+    function _distributeYield(uint256 totalYield) internal {
         if (totalShares == 0 || totalYield == 0) {
             return;
         }
-
-        // Distribute yield proportionally based on shares
         // Yield increases totalAssets, which increases share value
         totalAssetsStaked += totalYield;
-
-        // Yield accrues to all shareholders proportionally
-        // No need to track individually - it's reflected in share value
         emit YieldAccrued(totalYield);
     }
 
@@ -768,12 +723,8 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
 
         if (userShare > 0 && totalVaultShares > 0) {
             // Calculate user's share percentage
-            uint256 sharePercent = (userShare * 100) / totalVaultShares;
-
-            // Determine which protocols to check based on share percentage
-            bool checkMorpho = sharePercent >= 10;
-            bool checkAave = sharePercent < 90;
-            bool checkBoth = sharePercent > 90;
+            uint256 sharePercent = TreasuryShareLibrary.calculateSharePercent(userShare, totalVaultShares);
+            (bool checkMorpho, bool checkAave, bool checkBoth) = TreasuryShareLibrary.getProtocolChecks(sharePercent);
 
             // Calculate available USDC (excluding protocol funds)
             uint256 availableUSDC = usdcToken.balanceOf(address(this)) - protocolFunds;
@@ -807,7 +758,6 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
             } else {
                 // Request from protocols based on share percentage
                 uint256 requested = 0;
-
                 if (checkBoth) {
                     requested += _requestFromMorpho(usdcToSend / 2);
                     requested += _requestFromAave(usdcToSend / 2);
@@ -822,11 +772,7 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
                 if (toSend > usdcToSend) toSend = usdcToSend;
                 if (toSend > 0) usdcToken.safeTransfer(receiver, toSend);
 
-                // Handle yield if any
-                if (usdcAmount > usdcToSend) {
-                    uint256 yieldAmount = usdcAmount - usdcToSend;
-                    // Yield can be claimed separately via claim() function
-                }
+                // Yield can be claimed separately via claim() function
             }
         } else {
             // User has no shares in vault, send from available balance (1:1)
@@ -858,12 +804,10 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         }
 
         // Calculate user's share percentage
-        uint256 sharePercent = (userShare * 100) / totalVaultShares;
+        uint256 sharePercent = TreasuryShareLibrary.calculateSharePercent(userShare, totalVaultShares);
 
         // Determine which protocols to check
-        bool checkMorpho = sharePercent >= 10;
-        bool checkAave = sharePercent < 90;
-        bool checkBoth = sharePercent > 90;
+        (bool checkMorpho, bool checkAave, bool checkBoth) = TreasuryShareLibrary.getProtocolChecks(sharePercent);
 
         // Calculate available yield from protocols
         uint256 availableYield = 0;
@@ -939,11 +883,8 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
             // Request from protocols based on user's share percentage
             uint256 userShare = GlUSD_shareOf[msg.sender];
             uint256 totalVaultShares = _getTotalVaultShares();
-            uint256 sharePercent = (userShare * 100) / totalVaultShares;
-
-            bool checkMorpho = sharePercent >= 10;
-            bool checkAave = sharePercent < 90;
-            bool checkBoth = sharePercent > 90;
+            uint256 sharePercent = TreasuryShareLibrary.calculateSharePercent(userShare, totalVaultShares);
+            (bool checkMorpho, bool checkAave, bool checkBoth) = TreasuryShareLibrary.getProtocolChecks(sharePercent);
 
             if (checkBoth) {
                 _requestFromMorpho(amount / 2);
@@ -1032,69 +973,35 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
     }
 
     function _requestFromMorpho(uint256 amount) internal returns (uint256) {
-        if (address(morphoMarket) == address(0) || morphoAssets == 0) return 0;
-        uint256 w = amount > morphoAssets ? morphoAssets : amount;
-        if (morphoMarketParams.loanToken == address(0)) {
-            morphoAssets -= w;
-            totalAssetsStaked -= w;
-            return w;
+        uint256 withdrawn = TreasuryStakingLibrary.requestFromMorpho(
+            morphoMarket,
+            morphoMarketParams,
+            usdcToken,
+            amount,
+            morphoAssets
+        );
+        if (withdrawn > 0) {
+            morphoAssets -= withdrawn;
+            totalAssetsStaked -= withdrawn;
         }
-        try morphoMarket.withdraw(morphoMarketParams, w, 0, address(this), address(this)) returns (uint256 a, uint256) {
-            if (a >= morphoAssets) {
-                totalAssetsStaked -= morphoAssets;
-                morphoAssets = 0;
-                return morphoAssets;
-            }
-            morphoAssets -= a;
-            totalAssetsStaked -= a;
-            return a;
-        } catch {
-            morphoAssets -= w;
-            totalAssetsStaked -= w;
-            return w;
-        }
+        return withdrawn;
     }
 
     function _requestFromAave(uint256 amount) internal returns (uint256) {
-        if (address(aavePool) == address(0) || aaveAssets == 0) return 0;
-        uint256 w = amount > aaveAssets ? aaveAssets : amount;
-        try aavePool.withdraw(address(usdcToken), w, address(this)) returns (uint256 a) {
-            if (a >= aaveAssets) {
-                totalAssetsStaked -= aaveAssets;
-                aaveAssets = 0;
-                return aaveAssets;
-            }
-            aaveAssets -= a;
-            totalAssetsStaked -= a;
-            return a;
-        } catch {
-            aaveAssets -= w;
-            totalAssetsStaked -= w;
-            return w;
+        uint256 withdrawn = TreasuryStakingLibrary.requestFromAave(aavePool, usdcToken, amount, aaveAssets);
+        if (withdrawn > 0) {
+            aaveAssets -= withdrawn;
+            totalAssetsStaked -= withdrawn;
         }
+        return withdrawn;
     }
 
     function _getAvailableYieldFromMorpho() internal view returns (uint256) {
-        if (address(morphoMarket) == address(0) || morphoAssets == 0 || morphoMarketParams.loanToken == address(0)) {
-            return 0;
-        }
-        try morphoMarket.market(morphoMarketParams) returns (IMorphoMarket.Market memory m) {
-            if (m.totalSupplyShares == 0) return 0;
-            uint256 v = (morphoAssets * m.totalSupplyAssets) / m.totalSupplyShares;
-            return v > morphoAssets ? v - morphoAssets : 0;
-        } catch {
-            return 0;
-        }
+        return TreasuryYieldLibrary.getAvailableYieldFromMorpho(morphoMarket, morphoMarketParams, morphoAssets);
     }
 
     function _getAvailableYieldFromAave() internal view returns (uint256) {
-        if (address(aavePool) == address(0) || aaveAssets == 0) return 0;
-        try aavePool.getReserveNormalizedIncome(address(usdcToken)) returns (uint256 n) {
-            if (n <= 1e27) return 0;
-            return (aaveAssets * (n - 1e27)) / 1e27;
-        } catch {
-            return 0;
-        }
+        return TreasuryYieldLibrary.getAvailableYieldFromAave(aavePool, usdcToken, aaveAssets);
     }
 }
 
