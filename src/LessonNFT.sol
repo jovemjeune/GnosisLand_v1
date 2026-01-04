@@ -15,7 +15,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 
-// Interface for TreasuryContract
+// Interface for TreasuryContract (Diamond compatible)
 interface ITreasuryContract {
     function receiveTreasuryFee(
         uint256 amount,
@@ -27,6 +27,7 @@ interface ITreasuryContract {
     ) external;
     function validateReferralCode(bytes32 referralCode) external view returns (address referrer, uint256 tokenId);
     function handleGlUSDPayment(uint256 glusdAmount, address from, address to) external returns (bool);
+    // Diamond-compatible: all functions work the same way
 }
 
 // Interface for TeacherNFT
