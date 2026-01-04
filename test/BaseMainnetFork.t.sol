@@ -1,8 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
-import {Test, console} from "forge-std/Test.sol";
-import {TreasuryContract} from "../src/TreasuryContract.sol";
+import {Test} from "forge-std/Test.sol";
+import {ITreasuryDiamond} from "../src/diamond/interfaces/ITreasuryDiamond.sol";
+import {DiamondDeployer} from "../src/diamond/DiamondDeployer.sol";
+import {DiamondCutFacet} from "../src/diamond/facets/DiamondCutFacet.sol";
+import {DiamondLoupeFacet} from "../src/diamond/facets/DiamondLoupeFacet.sol";
+import {TreasuryCoreFacet} from "../src/diamond/facets/TreasuryCoreFacet.sol";
+import {TreasuryStakingFacet} from "../src/diamond/facets/TreasuryStakingFacet.sol";
+import {TreasuryYieldFacet} from "../src/diamond/facets/TreasuryYieldFacet.sol";
+import {TreasuryFeeFacet} from "../src/diamond/facets/TreasuryFeeFacet.sol";
+import {TreasuryVaultFacet} from "../src/diamond/facets/TreasuryVaultFacet.sol";
+import {TreasuryAdminFacet} from "../src/diamond/facets/TreasuryAdminFacet.sol";
+import {TreasuryInitFacet} from "../src/diamond/facets/TreasuryInitFacet.sol";
+import {IDiamondCut} from "../src/diamond/interfaces/IDiamondCut.sol";
 import {GlUSD} from "../src/GlUSD.sol";
 import {EscrowNFT} from "../src/EscrowNFT.sol";
 import {TeacherNft} from "../src/TeacherNFT.sol";
@@ -32,12 +43,13 @@ contract BaseMainnetForkTest is Test {
     address teacher = address(0x3);
 
     // Contracts
-    TreasuryContract treasury;
+    ITreasuryDiamond treasury;
     GlUSD glusd;
     EscrowNFT escrow;
     TeacherNft teacherNFT;
     Vault vault;
     IERC20 usdc;
+    DiamondDeployer diamondDeployer;
 
     // Morpho Market Parameters for USDC (example - need to find actual Base mainnet market)
     IMorphoMarket.MarketParams morphoParams;
@@ -84,7 +96,7 @@ contract BaseMainnetForkTest is Test {
         );
         glusd = GlUSD(address(new ERC1967Proxy(address(glusdImpl), glusdInit)));
 
-        // Deploy TreasuryContract
+        // Deploy Treasury Diamond
         // On local chain (not fork), use address(0) for protocols so assets are tracked without staking
         // On fork, use actual protocol addresses
         address aavePoolAddr =
@@ -92,18 +104,62 @@ contract BaseMainnetForkTest is Test {
         address morphoMarketAddr =
             (block.chainid == 8453 && BASE_MORPHO_BLUE.code.length > 0) ? BASE_MORPHO_BLUE : address(0);
 
-        TreasuryContract treasuryImpl = new TreasuryContract();
-        bytes memory treasuryInit = abi.encodeWithSelector(
-            TreasuryContract.initialize.selector,
-            address(glusd),
-            BASE_USDC,
-            aavePoolAddr,
-            morphoMarketAddr,
-            address(escrow),
-            address(0), // lessonNFT (will be set later)
-            owner
+        // Deploy facets separately to avoid contract size issues
+        DiamondCutFacet diamondCutFacet = new DiamondCutFacet();
+        DiamondLoupeFacet diamondLoupeFacet = new DiamondLoupeFacet();
+        TreasuryCoreFacet coreFacet = new TreasuryCoreFacet();
+        TreasuryStakingFacet stakingFacet = new TreasuryStakingFacet();
+        TreasuryYieldFacet yieldFacet = new TreasuryYieldFacet();
+        TreasuryFeeFacet feeFacet = new TreasuryFeeFacet();
+        TreasuryVaultFacet vaultFacet = new TreasuryVaultFacet();
+        TreasuryAdminFacet adminFacet = new TreasuryAdminFacet();
+        TreasuryInitFacet initFacet = new TreasuryInitFacet();
+        
+        diamondDeployer = new DiamondDeployer();
+        DiamondDeployer.DeploymentParams memory params = DiamondDeployer.DeploymentParams({
+            contractOwner: owner,
+            glusdToken: address(glusd),
+            usdcToken: BASE_USDC,
+            aavePool: aavePoolAddr,
+            morphoMarket: morphoMarketAddr,
+            escrowNFT: address(escrow),
+            lessonNFT: address(0)
+        });
+        address treasuryAddress = diamondDeployer.deployTreasuryDiamond(
+            address(diamondCutFacet),
+            address(diamondLoupeFacet),
+            address(coreFacet),
+            address(stakingFacet),
+            address(yieldFacet),
+            address(feeFacet),
+            address(vaultFacet),
+            address(adminFacet),
+            address(initFacet),
+            params
         );
-        treasury = TreasuryContract(address(new ERC1967Proxy(address(treasuryImpl), treasuryInit)));
+        // Get facet cuts and perform diamond cut as owner
+        (IDiamondCut.FacetCut[] memory cuts, bytes memory initCalldata, address initFacetAddr) = 
+            diamondDeployer.getFacetCuts(
+                address(diamondLoupeFacet),
+                address(coreFacet),
+                address(stakingFacet),
+                address(yieldFacet),
+                address(feeFacet),
+                address(vaultFacet),
+                address(adminFacet),
+                address(initFacet)
+            );
+        initCalldata = abi.encodeWithSelector(
+            TreasuryInitFacet.init.selector,
+            params.glusdToken,
+            params.usdcToken,
+            params.aavePool,
+            params.morphoMarket,
+            params.escrowNFT,
+            params.lessonNFT
+        );
+        IDiamondCut(treasuryAddress).diamondCut(cuts, initFacetAddr, initCalldata);
+        treasury = ITreasuryDiamond(treasuryAddress);
 
         // Update GlUSD treasury
         glusd.updateTreasury(address(treasury));

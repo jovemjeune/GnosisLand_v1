@@ -2,9 +2,21 @@
 
 pragma solidity ^0.8.13;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {LessonNFT} from "../src/LessonNFT.sol";
-import {TreasuryContract} from "../src/TreasuryContract.sol";
+import {ITreasuryDiamond} from "../src/diamond/interfaces/ITreasuryDiamond.sol";
+import {ITreasuryErrors} from "../src/diamond/interfaces/ITreasuryErrors.sol";
+import {DiamondDeployer} from "../src/diamond/DiamondDeployer.sol";
+import {DiamondCutFacet} from "../src/diamond/facets/DiamondCutFacet.sol";
+import {DiamondLoupeFacet} from "../src/diamond/facets/DiamondLoupeFacet.sol";
+import {TreasuryCoreFacet} from "../src/diamond/facets/TreasuryCoreFacet.sol";
+import {TreasuryStakingFacet} from "../src/diamond/facets/TreasuryStakingFacet.sol";
+import {TreasuryYieldFacet} from "../src/diamond/facets/TreasuryYieldFacet.sol";
+import {TreasuryFeeFacet} from "../src/diamond/facets/TreasuryFeeFacet.sol";
+import {TreasuryVaultFacet} from "../src/diamond/facets/TreasuryVaultFacet.sol";
+import {TreasuryAdminFacet} from "../src/diamond/facets/TreasuryAdminFacet.sol";
+import {TreasuryInitFacet} from "../src/diamond/facets/TreasuryInitFacet.sol";
+import {IDiamondCut} from "../src/diamond/interfaces/IDiamondCut.sol";
 import {GlUSD} from "../src/GlUSD.sol";
 import {Vault} from "../src/Vault.sol";
 import {EscrowNFT} from "../src/EscrowNFT.sol";
@@ -12,7 +24,6 @@ import {TeacherNft} from "../src/TeacherNFT.sol";
 import {LessonFactory} from "../src/LessonFactory.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title Security Tests
@@ -22,8 +33,7 @@ contract SecurityTests is Test {
     // Contracts
     LessonNFT lessonNFTImpl;
     LessonNFT lessonNFT;
-    TreasuryContract treasuryImpl;
-    TreasuryContract treasury;
+    ITreasuryDiamond treasury;
     GlUSD glusdImpl;
     GlUSD glusd;
     Vault vault;
@@ -33,6 +43,7 @@ contract SecurityTests is Test {
     TeacherNft teacherNFT;
     LessonFactory factory;
     IERC20 usdc;
+    DiamondDeployer diamondDeployer;
 
     // Test addresses
     address owner = address(0x1);
@@ -66,25 +77,68 @@ contract SecurityTests is Test {
         bytes memory teacherInit = abi.encodeWithSelector(TeacherNft.initialize.selector, "Teacher NFT", "TEACH", owner);
         teacherNFT = TeacherNft(address(new ERC1967Proxy(address(teacherNFTImpl), teacherInit)));
 
-        // Deploy Treasury
-        treasuryImpl = new TreasuryContract();
-
         // Deploy GlUSD with temporary address
         glusdImpl = new GlUSD();
         bytes memory glusdInit = abi.encodeWithSelector(GlUSD.initialize.selector, address(0x123), address(usdc), owner);
         glusd = GlUSD(address(new ERC1967Proxy(address(glusdImpl), glusdInit)));
 
-        bytes memory treasuryInit = abi.encodeWithSelector(
-            TreasuryContract.initialize.selector,
-            address(glusd),
-            address(usdc),
-            address(0),
-            address(0),
-            address(escrow),
-            address(0),
-            owner
+        // Deploy Treasury Diamond (must be called as owner)
+        // Deploy facets separately to avoid contract size issues
+        DiamondCutFacet diamondCutFacet = new DiamondCutFacet();
+        DiamondLoupeFacet diamondLoupeFacet = new DiamondLoupeFacet();
+        TreasuryCoreFacet coreFacet = new TreasuryCoreFacet();
+        TreasuryStakingFacet stakingFacet = new TreasuryStakingFacet();
+        TreasuryYieldFacet yieldFacet = new TreasuryYieldFacet();
+        TreasuryFeeFacet feeFacet = new TreasuryFeeFacet();
+        TreasuryVaultFacet vaultFacet = new TreasuryVaultFacet();
+        TreasuryAdminFacet adminFacet = new TreasuryAdminFacet();
+        TreasuryInitFacet initFacet = new TreasuryInitFacet();
+        
+        diamondDeployer = new DiamondDeployer();
+        DiamondDeployer.DeploymentParams memory params = DiamondDeployer.DeploymentParams({
+            contractOwner: owner,
+            glusdToken: address(glusd),
+            usdcToken: address(usdc),
+            aavePool: address(0),
+            morphoMarket: address(0),
+            escrowNFT: address(escrow),
+            lessonNFT: address(0)
+        });
+        address treasuryAddress = diamondDeployer.deployTreasuryDiamond(
+            address(diamondCutFacet),
+            address(diamondLoupeFacet),
+            address(coreFacet),
+            address(stakingFacet),
+            address(yieldFacet),
+            address(feeFacet),
+            address(vaultFacet),
+            address(adminFacet),
+            address(initFacet),
+            params
         );
-        treasury = TreasuryContract(address(new ERC1967Proxy(address(treasuryImpl), treasuryInit)));
+        // Get facet cuts and perform diamond cut as owner
+        (IDiamondCut.FacetCut[] memory cuts, bytes memory initCalldata, address initFacetAddr) = 
+            diamondDeployer.getFacetCuts(
+                address(diamondLoupeFacet),
+                address(coreFacet),
+                address(stakingFacet),
+                address(yieldFacet),
+                address(feeFacet),
+                address(vaultFacet),
+                address(adminFacet),
+                address(initFacet)
+            );
+        initCalldata = abi.encodeWithSelector(
+            TreasuryInitFacet.init.selector,
+            params.glusdToken,
+            params.usdcToken,
+            params.aavePool,
+            params.morphoMarket,
+            params.escrowNFT,
+            params.lessonNFT
+        );
+        IDiamondCut(treasuryAddress).diamondCut(cuts, initFacetAddr, initCalldata);
+        treasury = ITreasuryDiamond(treasuryAddress);
 
         glusd.updateTreasury(address(treasury));
 
@@ -351,7 +405,7 @@ contract SecurityTests is Test {
         // User should not be able to claim protocol funds
         uint256 claimable = treasury.getClaimableAmount(student);
         // Claimable should not include protocol funds (verified by logic, not by test assertion)
-
+        assertEq(claimable,0);
         vm.stopPrank();
     }
 
@@ -360,7 +414,7 @@ contract SecurityTests is Test {
     function test_EdgeCase_ZeroDeposit() public {
         vm.startPrank(student);
 
-        vm.expectRevert(TreasuryContract.invalidAmount.selector);
+        vm.expectRevert(ITreasuryErrors.invalidAmount.selector);
         treasury.depositUSDC(0);
 
         vm.stopPrank();
@@ -373,7 +427,7 @@ contract SecurityTests is Test {
         MockERC20(address(usdc)).approve(address(treasury), deposit);
         treasury.depositUSDC(deposit);
 
-        vm.expectRevert(TreasuryContract.invalidAmount.selector);
+        vm.expectRevert(ITreasuryErrors.invalidAmount.selector);
         treasury.withdrawStaked(0, false);
 
         vm.stopPrank();
@@ -406,7 +460,7 @@ contract SecurityTests is Test {
         treasury.depositUSDC(deposit);
 
         // Try to withdraw immediately
-        vm.expectRevert(TreasuryContract.stakeStillLocked.selector);
+        vm.expectRevert(ITreasuryErrors.stakeStillLocked.selector);
         treasury.withdrawStaked(100e6, false);
 
         vm.stopPrank();
@@ -425,7 +479,7 @@ contract SecurityTests is Test {
         vm.warp(block.timestamp + LOCK_PERIOD);
 
         // Try to claim without withdrawing first
-        vm.expectRevert(TreasuryContract.stakeStillLocked.selector);
+        vm.expectRevert(ITreasuryErrors.stakeStillLocked.selector);
         treasury.claim(100e6);
 
         vm.stopPrank();
@@ -445,7 +499,7 @@ contract SecurityTests is Test {
     function test_AccessControl_OnlyLessonNFTCanCallReceiveFee() public {
         vm.startPrank(attacker);
 
-        vm.expectRevert(TreasuryContract.unauthorizedCaller.selector);
+        vm.expectRevert(ITreasuryErrors.unauthorizedCaller.selector);
         treasury.receiveTreasuryFee(100e6, student, teacher, bytes32(0), 0, address(0));
 
         vm.stopPrank();
@@ -454,7 +508,7 @@ contract SecurityTests is Test {
     function test_AccessControl_OnlyVaultCanCallHandleWithdraw() public {
         vm.startPrank(attacker);
 
-        vm.expectRevert(TreasuryContract.unauthorizedCaller.selector);
+        vm.expectRevert(ITreasuryErrors.unauthorizedCaller.selector);
         treasury.handleVaultWithdraw(student, 100e6, 100e6, student);
 
         vm.stopPrank();
@@ -501,7 +555,7 @@ contract SecurityTests is Test {
         vault.deposit(flashLoanAmount, attacker);
 
         // Withdraw immediately (should fail due to lock)
-        vm.expectRevert(TreasuryContract.stakeStillLocked.selector);
+        vm.expectRevert(ITreasuryErrors.stakeStillLocked.selector);
         treasury.withdrawStaked(flashLoanAmount, false);
 
         vm.stopPrank();
@@ -517,7 +571,7 @@ contract SecurityTests is Test {
         uint256 deposit = 1000e6;
         MockERC20(address(usdc)).approve(address(treasury), deposit);
 
-        vm.expectRevert(TreasuryContract.contractPaused.selector);
+        vm.expectRevert(ITreasuryErrors.contractPaused.selector);
         treasury.depositUSDC(deposit);
 
         vm.stopPrank();
@@ -548,7 +602,7 @@ contract SecurityTests is Test {
         treasury.pause();
 
         vm.startPrank(student);
-        vm.expectRevert(TreasuryContract.contractPaused.selector);
+        vm.expectRevert(ITreasuryErrors.contractPaused.selector);
         treasury.claim(100e6);
 
         vm.stopPrank();
@@ -574,12 +628,12 @@ contract SecurityTests is Test {
 
 // Reentrancy attacker contract
 contract ReentrancyAttacker {
-    TreasuryContract treasury;
+    ITreasuryDiamond treasury;
     IERC20 usdc;
     bool attacking;
 
     constructor(address _treasury, address _usdc) {
-        treasury = TreasuryContract(_treasury);
+        treasury = ITreasuryDiamond(_treasury);
         usdc = IERC20(_usdc);
     }
 
