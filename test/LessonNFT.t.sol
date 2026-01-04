@@ -3,11 +3,8 @@ pragma solidity ^0.8.13;
 
 import {Test} from "forge-std/Test.sol";
 import {LessonNFT} from "../src/LessonNFT.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ProxyFactory} from "../src/proxies/ProxyFactory.sol";
 import {MockERC20} from "./MockERC20.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 contract LessonNFTTest is Test {
     LessonNFT public impl;
@@ -106,11 +103,6 @@ contract LessonNFTTest is Test {
         vm.prank(user1);
         vm.expectRevert();
         nft.createLesson("lesson data", "");
-    }
-
-    function test_CreateLesson_WhenPaused() public {
-        // Note: We need a pause function to test this, but it's not in the contract
-        // This test would require adding a pause function
     }
 
     function test_CreateMultipleLessons() public {
