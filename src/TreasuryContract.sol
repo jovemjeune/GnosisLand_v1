@@ -8,15 +8,14 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {GlUSD} from "./GlUSD.sol";
 import {IAavePool} from "./interfaces/IAavePool.sol";
+import {IEscrowNFT} from "./interfaces/IEscrowNFT.sol";
 import {IMorphoMarket} from "./interfaces/IMorphoMarket.sol";
 import {TreasuryStakingLibrary} from "./libraries/TreasuryStakingLibrary.sol";
 import {TreasuryYieldLibrary} from "./libraries/TreasuryYieldLibrary.sol";
 import {TreasuryShareLibrary} from "./libraries/TreasuryShareLibrary.sol";
-interface IEscrowNFT {
-    function validateReferralCode(bytes32 referralCode) external view returns (address referrer, uint256 tokenId);
-}
 contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using Math for uint256;
@@ -36,36 +35,28 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
     uint256 public protocolFunds; // Total protocol funds (never mixed with staker funds)
     uint256 public morphoAllocationPercent; // 90%
     uint256 public aaveAllocationPercent; // 10%
+    
     mapping(address => uint256) public underlyingBalanceOf; // User => USDC deposited/referral rewards (1:1 with GlUSD minted)
-    mapping(address => uint256) public GlUSD_shareOf; // User => GlUSD shares in vault (from Vault deposit)
+    mapping(address => uint256) public userShare; // User => Vault shares (ERC4626 shares from vault deposits)
     mapping(address => uint256) public totalWithdrawn; // User => Total USDC withdrawn (for Invariant 3)
     mapping(address => uint256) public referrerStakedCollateral; // Referrer => Total USDC staked from referrals
     mapping(address => uint256) public referrerShares; // Referrer => GlUSD shares from referrals
     mapping(address => uint256) public referrerTotalRewards; // Referrer => Total rewards earned
-    struct Stake {
-        uint256 amount; // Amount staked
-        uint256 timestamp; // When stake was made
-        bool isReferral; // true if from referral reward, false if from user deposit
-    }
-    mapping(address => Stake[]) public userStakes; // User => Array of stakes
-    mapping(address => Stake[]) public referrerStakes; // Referrer => Array of referral reward stakes
+    mapping(address => uint256) public referrerStakes; 
+    mapping(address => uint256) public userStakes; 
+    mapping(address => uint256) public referrerTimeStamp;
+    mapping(address => uint256) public userTimeStamp;
 
     uint256 public constant LOCK_PERIOD = 1 days; // 1 day lock period
-    uint256 public constant TREASURY_FEE_PERCENT = 10; // 10% of sales
-    uint256 public constant USER_YIELD_PERCENT = 3; // 3% goes to users/teachers
-    uint256 public constant REFERRAL_REWARD_PERCENT = 3; // 3% of purchase price to referrer
     uint256 public constant MORPHO_ALLOCATION = 90; // 90% to Morpho
     uint256 public constant AAVE_ALLOCATION = 10; // 10% to Aave
     error zeroAddress();
     error insufficientBalance();
     error invalidAmount();
-    error notAuthorized();
     error stakeStillLocked();
-    error noStakeFound();
     error contractPaused();
     error unauthorizedCaller();
     error nothingToClaim();
-    error fundsNotAvailable();
     event USDCDeposited(address indexed user, uint256 assets, uint256 shares);
     event GlUSDRedeemed(address indexed user, uint256 shares, uint256 assets);
     event TreasuryFeeReceived(uint256 amount);
@@ -73,7 +64,6 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         address indexed referrer, address indexed referred, uint256 rewardAmount, uint256 sharesMinted
     );
     event AssetsStaked(address indexed protocol, uint256 amount);
-    event YieldAccrued(uint256 totalYield);
     event StakeWithdrawn(address indexed user, uint256 amount, bool isReferral);
     event ContractPaused();
     event ContractUnpaused();
@@ -130,26 +120,14 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
     }
 
     function getWithdrawableAmount(address user, bool isReferral) public view returns (uint256 withdrawable) {
-        Stake[] memory stakes = isReferral ? referrerStakes[user] : userStakes[user];
+        uint256 stakes = isReferral ? referrerStakes[user] : userStakes[user];
+        uint256 timeStampMode = isReferral ? referrerTimeStamp[user] : userTimeStamp[user]; 
         uint256 currentTime = block.timestamp;
-
-        for (uint256 i = 0; i < stakes.length; i++) {
-            if (currentTime >= stakes[i].timestamp + LOCK_PERIOD) {
-                withdrawable += stakes[i].amount;
-            }
+        if (currentTime >= timeStampMode + LOCK_PERIOD && (timeStampMode > uint256(0))){
+            withdrawable += stakes;
         }
     }
 
-    function getLockedAmount(address user, bool isReferral) public view returns (uint256 locked) {
-        Stake[] memory stakes = isReferral ? referrerStakes[user] : userStakes[user];
-        uint256 currentTime = block.timestamp;
-
-        for (uint256 i = 0; i < stakes.length; i++) {
-            if (currentTime < stakes[i].timestamp + LOCK_PERIOD) {
-                locked += stakes[i].amount;
-            }
-        }
-    }
 
     function depositUSDC(uint256 amount) external nonReentrant {
         if (paused) revert contractPaused();
@@ -194,23 +172,15 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
     function withdrawStaked(uint256 amount, bool isReferral) external {
         if (amount == 0) revert invalidAmount();
         if (amount > getWithdrawableAmount(msg.sender, isReferral)) revert stakeStillLocked();
-        Stake[] storage stakes = isReferral ? referrerStakes[msg.sender] : userStakes[msg.sender];
-        uint256 currentTime = block.timestamp;
-        uint256 remaining = amount;
-        for (uint256 i = 0; i < stakes.length && remaining > 0; i++) {
-            if (currentTime >= stakes[i].timestamp + LOCK_PERIOD && stakes[i].amount > 0) {
-                uint256 toWithdraw = stakes[i].amount < remaining ? stakes[i].amount : remaining;
-                stakes[i].amount -= toWithdraw;
-                remaining -= toWithdraw;
-                if (stakes[i].amount == 0) {
-                    stakes[i] = stakes[stakes.length - 1];
-                    stakes.pop();
-                    i--;
-                }
-            }
+        
+        // Update the mapping, not just local variable
+        if (isReferral) {
+            referrerStakes[msg.sender] -= amount;
+            referrerStakedCollateral[msg.sender] -= amount;
+        } else {
+            userStakes[msg.sender] -= amount;
         }
-        if (remaining > 0) revert insufficientBalance();
-        if (isReferral) referrerStakedCollateral[msg.sender] -= amount;
+        
         totalAssetsStaked -= amount;
         totalWithdrawn[msg.sender] += amount;
         usdcToken.safeTransfer(msg.sender, amount);
@@ -282,22 +252,25 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
 
         if (morphoAmount > 0) emit AssetsStaked(address(morphoMarket), morphoAmount);
         if (aaveAmount > 0) emit AssetsStaked(address(aavePool), aaveAmount);
-        Stake memory newStake = Stake({amount: amount, timestamp: block.timestamp, isReferral: isReferral});
         if (isReferral) {
-            referrerStakes[staker].push(newStake);
+            if(referrerStakes[staker] == 0){
+                referrerTimeStamp[staker] = block.timestamp;
+                referrerStakes[staker]=amount;
+            }
+            else{
+                referrerStakes[staker]+=amount;
+            }
         } else {
-            userStakes[staker].push(newStake);
+            if(userStakes[staker] == 0){
+                userTimeStamp[staker] = block.timestamp;
+                userStakes[staker]=amount;
+            }
+            else{
+                userStakes[staker]+=amount;
+            }
         }
     }
 
-    function _distributeYield(uint256 totalYield) internal {
-        if (totalShares == 0 || totalYield == 0) {
-            return;
-        }
-
-        totalAssetsStaked += totalYield;
-        emit YieldAccrued(totalYield);
-    }
 
     function validateReferralCode(bytes32 referralCode) public view returns (address referrer, uint256 tokenId) {
         if (escrowNFT == address(0)) {
@@ -340,15 +313,30 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         emit ContractUnpaused();
     }
 
+    /**
+     * @notice Tracks user shares in vault when they deposit via ERC4626
+     * @dev Called by vault when user deposits GlUSD. Updates userShare mapping.
+     * @param user Address of the user depositing
+     * @param shares Amount of vault shares minted (ERC4626 shares)
+     */
     function trackGlUSDShare(address user, uint256 shares) external {
         if (msg.sender != vault) {
             revert unauthorizedCaller();
         }
-        GlUSD_shareOf[user] += shares;
+        userShare[user] += shares;
         emit GlUSDShareTracked(user, shares);
     }
 
-    function handleVaultWithdraw(address user, uint256 glusdShares, uint256 usdcAmount, address receiver)
+    /**
+     * @notice Handles vault withdrawal using ERC4626
+     * @dev Called by vault when user withdraws. Burns GlUSD and sends USDC.
+     * Ensures user has enough GlUSD to maintain 1:1 ratio with USDC.
+     * @param user Address of the user withdrawing
+     * @param vaultShares Amount of vault shares being redeemed (ERC4626 shares)
+     * @param usdcAmount Amount of USDC to send (calculated by vault using convertToAssets)
+     * @param receiver Address to receive USDC
+     */
+    function handleVaultWithdraw(address user, uint256 vaultShares, uint256 usdcAmount, address receiver)
         external
         nonReentrant
     {
@@ -356,65 +344,76 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
             if (msg.sender != vault) revert unauthorizedCaller();
             revert contractPaused();
         }
-        uint256 usdcToSend = usdcAmount < glusdShares ? usdcAmount : glusdShares;
-        glusdToken.burn(address(vault), glusdShares);
-        if (underlyingBalanceOf[user] >= usdcToSend) {
-            underlyingBalanceOf[user] -= usdcToSend;
+        
+        // Update user's vault shares (ERC4626 shares)
+        if (userShare[user] >= vaultShares) {
+            userShare[user] -= vaultShares;
+        } else {
+            userShare[user] = 0;
+        }
+        
+        // Invariant 1: Maintain 1:1 ratio - use underlyingBalanceOf instead of vault-calculated amount
+        // The vault may return more USDC due to yield appreciation, but we must maintain 1:1 with GlUSD
+        uint256 userUnderlyingBalance = underlyingBalanceOf[user];
+        uint256 actualWithdrawAmount = usdcAmount < userUnderlyingBalance ? usdcAmount : userUnderlyingBalance;
+        
+        // Burn GlUSD from vault (1:1 with actualWithdrawAmount to maintain invariant)
+        if (actualWithdrawAmount > 0) {
+            glusdToken.burn(address(vault), actualWithdrawAmount);
+        }
+        
+        // Update underlying balance (maintain 1:1 ratio)
+        if (underlyingBalanceOf[user] >= actualWithdrawAmount) {
+            underlyingBalanceOf[user] -= actualWithdrawAmount;
         } else {
             underlyingBalanceOf[user] = 0;
         }
-        totalWithdrawn[user] += usdcToSend;
-        if (GlUSD_shareOf[user] >= glusdShares) {
-            GlUSD_shareOf[user] -= glusdShares;
-        } else {
-            GlUSD_shareOf[user] = 0;
-        }
-        uint256 availableUSDC = usdcToken.balanceOf(address(this)) - protocolFunds;
-        uint256 userShare = GlUSD_shareOf[user];
+        totalWithdrawn[user] += actualWithdrawAmount;
+        
+        // Use actualWithdrawAmount for the rest of the function
+        usdcAmount = actualWithdrawAmount;
+        
+        // Calculate user's share percentage for yield distribution
+        uint256 userShares = userShare[user];
         uint256 totalVaultShares = _getTotalVaultShares();
-        if (userShare > 0 && totalVaultShares > 0) {
-            uint256 sharePercent = TreasuryShareLibrary.calculateSharePercent(userShare, totalVaultShares);
+        
+        uint256 availableUSDC = usdcToken.balanceOf(address(this)) - protocolFunds;
+        uint256 requested = 0;
+        
+        if (userShares > 0 && totalVaultShares > 0) {
+            uint256 sharePercent = TreasuryShareLibrary.calculateSharePercent(userShares, totalVaultShares);
             (bool checkMorpho, bool checkAave, bool checkBoth) = TreasuryShareLibrary.getProtocolChecks(sharePercent);
-            uint256 requested = 0;
-            if (availableUSDC < usdcToSend) {
+            
+            if (availableUSDC < usdcAmount) {
                 if (checkBoth) {
-                    requested += _requestFromMorpho(usdcToSend / 2);
-                    requested += _requestFromAave(usdcToSend / 2);
+                    requested += _requestFromMorpho(usdcAmount / 2);
+                    requested += _requestFromAave(usdcAmount / 2);
                 } else if (checkMorpho) {
-                    requested = _requestFromMorpho(usdcToSend);
+                    requested = _requestFromMorpho(usdcAmount);
                 } else if (checkAave) {
-                    requested = _requestFromAave(usdcToSend);
+                    requested = _requestFromAave(usdcAmount);
                 }
             }
-            uint256 toSend = availableUSDC + requested;
-            if (toSend > usdcToSend) toSend = usdcToSend;
-            if (toSend > 0) usdcToken.safeTransfer(receiver, toSend);
-            if (usdcAmount > usdcToSend && availableUSDC >= usdcToSend) {
-                uint256 yieldAmount = usdcAmount - usdcToSend;
-                uint256 yieldAvailable = availableUSDC - usdcToSend;
-                if (yieldAvailable < yieldAmount) {
-                    if (checkBoth) {
-                        requested = _requestFromMorpho(yieldAmount / 2) + _requestFromAave(yieldAmount / 2);
-                    } else if (checkMorpho) {
-                        requested = _requestFromMorpho(yieldAmount);
-                    } else if (checkAave) {
-                        requested = _requestFromAave(yieldAmount);
-                    }
-                    yieldAvailable += requested;
-                }
-                if (yieldAvailable > yieldAmount) yieldAvailable = yieldAmount;
-                if (yieldAvailable > 0) usdcToken.safeTransfer(receiver, yieldAvailable);
-            }
-        } else {
-            uint256 toSend = availableUSDC >= usdcToSend ? usdcToSend : availableUSDC;
-            if (toSend > 0) usdcToken.safeTransfer(receiver, toSend);
         }
-        emit VaultWithdrawProcessed(user, glusdShares, usdcToSend);
+        
+        uint256 toSend = availableUSDC + requested;
+        if (toSend > usdcAmount) toSend = usdcAmount;
+        if (toSend > 0) {
+            usdcToken.safeTransfer(receiver, toSend);
+        }
+        
+        emit VaultWithdrawProcessed(user, vaultShares, toSend);
     }
 
+    /**
+     * @notice Calculates claimable rewards for a user based on their ERC4626 vault shares
+     * @dev Uses ERC4626 totalSupply() for share calculation: (availableYield * userShare) / totalSupply()
+     * @param user Address of the user to check
+     * @return claimable Amount of USDC rewards claimable
+     */
     function getClaimableAmount(address user) external view returns (uint256 claimable) {
-        uint256 userShare = GlUSD_shareOf[user];
-        if (userShare == 0) {
+        uint256 userShares = userShare[user];
+        if (userShares == 0) {
             return 0;
         }
 
@@ -422,43 +421,55 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         if (totalVaultShares == 0) {
             return 0;
         }
-        uint256 sharePercent = TreasuryShareLibrary.calculateSharePercent(userShare, totalVaultShares);
+        
+        uint256 sharePercent = TreasuryShareLibrary.calculateSharePercent(userShares, totalVaultShares);
         (bool checkMorpho, bool checkAave, bool checkBoth) = TreasuryShareLibrary.getProtocolChecks(sharePercent);
         uint256 availableYield = 0;
 
         if (checkBoth) {
-
             availableYield += _getAvailableYieldFromMorpho();
             availableYield += _getAvailableYieldFromAave();
         } else if (checkMorpho) {
-
             availableYield = _getAvailableYieldFromMorpho();
         } else if (checkAave) {
-
             availableYield = _getAvailableYieldFromAave();
         }
-        claimable = (availableYield * userShare) / totalVaultShares;
+        
+        // Calculate reward using ERC4626 totalSupply: (availableYield * userShare) / totalSupply
+        // ERC4626 uses 18 decimals by default, but we're working with actual share amounts
+        claimable = (availableYield * userShares) / totalVaultShares;
+        
         uint256 availableUSDC = usdcToken.balanceOf(address(this)) - protocolFunds;
         if (claimable > availableUSDC) {
             claimable = availableUSDC;
         }
     }
 
+    /**
+     * @notice Claims rewards for user based on their ERC4626 vault shares
+     * @dev Ensures user has enough GlUSD to maintain 1:1 ratio before allowing claim
+     * @param amount Amount of USDC to claim
+     */
     function claim(uint256 amount) external nonReentrant {
         if (paused) {
             revert contractPaused();
         }
 
+        // Invariant 2: Check 1-day lock period
         uint256 withdrawable = getWithdrawableAmount(msg.sender, false);
         if (withdrawable == 0) {
-
-            Stake[] memory stakes = userStakes[msg.sender];
-            if (stakes.length > 0) {
-
+            uint256 stakes = userStakes[msg.sender];
+            if (stakes == 0) {
+                revert stakeStillLocked();
+            }
+            // Check if lock period has passed
+            uint256 timeStamp = userTimeStamp[msg.sender];
+            if (timeStamp > 0 && block.timestamp < timeStamp + LOCK_PERIOD) {
                 revert stakeStillLocked();
             }
         }
 
+        // Invariant 3: User must have withdrawn before claiming
         if (totalWithdrawn[msg.sender] == 0) {
             revert stakeStillLocked(); // Reuse error - user hasn't withdrawn yet
         }
@@ -470,13 +481,29 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         if (amount > claimable) {
             amount = claimable; // Claim maximum available
         }
+        
+        // Ensure user has enough GlUSD to maintain 1:1 ratio
+        // underlyingBalanceOf (USDC) should equal GlUSD balance
+        uint256 userGlUSDBalance = glusdToken.balanceOf(msg.sender);
+        uint256 userUSDCBalance = underlyingBalanceOf[msg.sender];
+        
+        // User must have enough GlUSD to cover their USDC balance
+        if (userGlUSDBalance < userUSDCBalance) {
+            // Adjust claimable amount to ensure ratio is maintained
+            uint256 shortfall = userUSDCBalance - userGlUSDBalance;
+            if (amount > shortfall) {
+                amount = amount - shortfall;
+            } else {
+                revert insufficientBalance(); // User doesn't have enough GlUSD
+            }
+        }
+        
         uint256 availableUSDC = usdcToken.balanceOf(address(this)) - protocolFunds;
 
         if (availableUSDC < amount) {
-
-            uint256 userShare = GlUSD_shareOf[msg.sender];
+            uint256 userShares = userShare[msg.sender];
             uint256 totalVaultShares = _getTotalVaultShares();
-            uint256 sharePercent = TreasuryShareLibrary.calculateSharePercent(userShare, totalVaultShares);
+            uint256 sharePercent = TreasuryShareLibrary.calculateSharePercent(userShares, totalVaultShares);
             (bool checkMorpho, bool checkAave, bool checkBoth) = TreasuryShareLibrary.getProtocolChecks(sharePercent);
 
             if (checkBoth) {
@@ -507,8 +534,17 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         if (_newVault == address(0)) revert zeroAddress();
         vault = _newVault;
     }
+    /**
+     * @notice Gets total vault shares using ERC4626 totalSupply()
+     * @dev ERC4626 totalSupply() returns total shares minted
+     * @return Total vault shares
+     */
     function _getTotalVaultShares() internal view returns (uint256) {
-        return vault == address(0) ? 0 : IVault(vault).totalSupply();
+        if (vault == address(0)) {
+            return 0;
+        }
+        // Use ERC4626 interface to get totalSupply (total shares)
+        return IERC4626(vault).totalSupply();
     }
 
     function _requestFromMorpho(uint256 amount) internal returns (uint256) {
@@ -535,6 +571,5 @@ contract TreasuryContract is Ownable, Initializable, UUPSUpgradeable, Reentrancy
         return TreasuryYieldLibrary.getAvailableYieldFromAave(aavePool, usdcToken, aaveAssets);
     }
 }
-interface IVault {
-    function totalSupply() external view returns (uint256);
-}
+// ERC4626 interface is imported from OpenZeppelin, no need for custom IVault interface
+
